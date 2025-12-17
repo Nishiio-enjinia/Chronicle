@@ -1,0 +1,72 @@
+# Configuration pour le développement avec hot-reload
+# Usage: docker-compose -f docker-compose.dev.yml up
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: chronicle-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: chronicle
+    networks:
+      - chronicle-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/chronicle --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: chronicle-backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - MONGODB_URI=mongodb://mongodb:27017/chronicle
+      - CORS_ORIGIN=http://localhost:5173
+    command: npm run dev
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - chronicle-network
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: chronicle-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:3000/api
+    command: npm run dev -- --host
+    depends_on:
+      - backend
+    networks:
+      - chronicle-network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  mongodb_data:
+
+networks:
+  chronicle-network:
+    driver: bridge
