@@ -3,7 +3,12 @@ import User from '../models/User.js';
 import Group from '../models/Group.js';
 import DataSource from '../models/DataSource.js';
 import PublicPage from '../models/PublicPage.js';
+import AzureDevOpsProject from '../models/AzureDevOpsProject.js';
+import AzureDevOpsPipeline from '../models/AzureDevOpsPipeline.js';
+import AzureDevOpsRepository from '../models/AzureDevOpsRepository.js';
+import AzureDevOpsUser from '../models/AzureDevOpsUser.js';
 import jwt from 'jsonwebtoken';
+import { runManualCrawl, runInitialCrawl } from '../bots/index.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'chronicle-secret-key-change-in-production';
@@ -187,6 +192,219 @@ router.delete('/data-sources/:id', requireAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Data source not found' });
     }
     res.json({ message: 'Data source deleted' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== GESTION DES CRAWLS ==========
+// Découvrir les projets Azure DevOps (sans créer de source)
+router.post('/data-sources/discover-projects', requireAdmin, async (req, res) => {
+  try {
+    const { config } = req.body;
+    
+    if (!config?.organizationUrl || !config?.personalAccessToken) {
+      return res.status(400).json({ error: 'URL de l\'organisation et PAT requis' });
+    }
+
+    // Importer le bot Azure DevOps
+    const azureDevOpsBot = (await import('../bots/azureDevOpsBot.js')).default;
+    
+    // Créer une source temporaire pour découvrir les projets
+    const tempSource = {
+      config: {
+        organizationUrl: config.organizationUrl,
+        personalAccessToken: config.personalAccessToken
+      }
+    };
+
+    // Utiliser une fonction helper pour découvrir uniquement les projets
+    const { WebApi, getPersonalAccessTokenHandler } = await import('azure-devops-node-api');
+    const authHandler = getPersonalAccessTokenHandler(config.personalAccessToken);
+    const orgUrl = config.organizationUrl.endsWith('/') ? config.organizationUrl.slice(0, -1) : config.organizationUrl;
+    const webApi = new WebApi(orgUrl, authHandler);
+    const coreApi = await webApi.getCoreApi();
+    const projects = await coreApi.getProjects();
+
+    const projectsList = projects.map(project => ({
+      id: project.id,
+      name: project.name,
+      description: project.description || '',
+      url: project.url
+    }));
+
+    res.json({ projects: projectsList });
+  } catch (error) {
+    console.error('Erreur lors de la découverte des projets Azure DevOps:', error);
+    const errorMessage = error.message || 'Erreur lors de la connexion à Azure DevOps';
+    const statusCode = error.statusCode || error.status || 500;
+    res.status(statusCode).json({ 
+      error: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// Crawl initial (première connexion)
+router.post('/data-sources/:id/crawl/initial', requireAdmin, async (req, res) => {
+  try {
+    const result = await runInitialCrawl(req.params.id);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Crawl manuel
+router.post('/data-sources/:id/crawl/manual', requireAdmin, async (req, res) => {
+  try {
+    const result = await runManualCrawl(req.params.id);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== DONNÉES AZURE DEVOPS (pour filtres) ==========
+// Récupérer les projets d'une source
+router.get('/data-sources/:id/azure-devops/projects', requireAdmin, async (req, res) => {
+  try {
+    const projects = await AzureDevOpsProject.find({ 
+      dataSourceId: req.params.id,
+      isVisible: true 
+    }).sort({ name: 1 });
+    res.json(projects);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Récupérer les pipelines d'une source (tous, pas seulement visibles pour la gestion)
+router.get('/data-sources/:id/azure-devops/pipelines', requireAdmin, async (req, res) => {
+  try {
+    const { projectId } = req.query;
+    const query = { 
+      dataSourceId: req.params.id
+    };
+    if (projectId) {
+      query.projectId = projectId;
+    }
+    const pipelines = await AzureDevOpsPipeline.find(query).sort({ name: 1 });
+    res.json(pipelines);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Récupérer les repositories d'une source (tous, pas seulement visibles pour la gestion)
+router.get('/data-sources/:id/azure-devops/repositories', requireAdmin, async (req, res) => {
+  try {
+    const { projectId } = req.query;
+    const query = { 
+      dataSourceId: req.params.id
+    };
+    if (projectId) {
+      query.projectId = projectId;
+    }
+    const repositories = await AzureDevOpsRepository.find(query).sort({ name: 1 });
+    res.json(repositories);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Récupérer les utilisateurs d'une source (tous pour la gestion, mais on peut filtrer par active)
+router.get('/data-sources/:id/azure-devops/users', requireAdmin, async (req, res) => {
+  try {
+    const { active } = req.query;
+    const query = { 
+      dataSourceId: req.params.id
+    };
+    if (active === 'true') {
+      query.active = true;
+    }
+    const users = await AzureDevOpsUser.find(query).sort({ displayName: 1 });
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Mettre à jour un projet
+router.put('/data-sources/:id/azure-devops/projects/:projectId', requireAdmin, async (req, res) => {
+  try {
+    const project = await AzureDevOpsProject.findOneAndUpdate(
+      { dataSourceId: req.params.id, _id: req.params.projectId },
+      { 
+        displayName: req.body.displayName,
+        isVisible: req.body.isVisible 
+      },
+      { new: true }
+    );
+    if (!project) {
+      return res.status(404).json({ error: 'Projet non trouvé' });
+    }
+    res.json(project);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Mettre à jour un pipeline
+router.put('/data-sources/:id/azure-devops/pipelines/:pipelineId', requireAdmin, async (req, res) => {
+  try {
+    const pipeline = await AzureDevOpsPipeline.findOneAndUpdate(
+      { dataSourceId: req.params.id, _id: req.params.pipelineId },
+      { 
+        displayName: req.body.displayName,
+        isVisible: req.body.isVisible 
+      },
+      { new: true }
+    );
+    if (!pipeline) {
+      return res.status(404).json({ error: 'Pipeline non trouvé' });
+    }
+    res.json(pipeline);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Mettre à jour un repository
+router.put('/data-sources/:id/azure-devops/repositories/:repositoryId', requireAdmin, async (req, res) => {
+  try {
+    const repository = await AzureDevOpsRepository.findOneAndUpdate(
+      { dataSourceId: req.params.id, _id: req.params.repositoryId },
+      { 
+        displayName: req.body.displayName,
+        isVisible: req.body.isVisible 
+      },
+      { new: true }
+    );
+    if (!repository) {
+      return res.status(404).json({ error: 'Repository non trouvé' });
+    }
+    res.json(repository);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Mettre à jour un utilisateur
+router.put('/data-sources/:id/azure-devops/users/:userId', requireAdmin, async (req, res) => {
+  try {
+    const user = await AzureDevOpsUser.findOneAndUpdate(
+      { dataSourceId: req.params.id, _id: req.params.userId },
+      { 
+        customDisplayName: req.body.displayName,
+        isVisible: req.body.isVisible 
+      },
+      { new: true }
+    );
+    if (!user) {
+      return res.status(404).json({ error: 'Utilisateur non trouvé' });
+    }
+    res.json(user);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

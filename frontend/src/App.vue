@@ -15,6 +15,10 @@
             <span class="nav-icon">📅</span>
             <span class="nav-text">Événements</span>
           </router-link>
+          <router-link to="/pipeline-logs" class="nav-link">
+            <span class="nav-icon">🔧</span>
+            <span class="nav-text">Logs Pipelines</span>
+          </router-link>
           <router-link to="/admin" class="nav-link">
             <span class="nav-icon">⚙️</span>
             <span class="nav-text">Back Office</span>

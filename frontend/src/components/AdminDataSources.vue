@@ -2,7 +2,7 @@
   <div class="admin-data-sources">
     <div class="section-header">
       <h3>📊 Sources de données</h3>
-      <button class="btn btn-primary" @click="showAddModal = true">
+      <button class="btn btn-primary" @click="showTypeSelector = true">
         + Ajouter une source
       </button>
     </div>
@@ -17,69 +17,93 @@
         <div class="source-header">
           <div>
             <h4>{{ source.name }}</h4>
-            <span class="source-type">{{ source.type }}</span>
+            <span class="source-type">{{ getSourceTypeLabel(source.type) }}</span>
           </div>
           <div class="source-actions">
+            <button 
+              v-if="source.type === 'azure-devops' && source.initialCrawlCompleted" 
+              class="btn btn-primary btn-sm" 
+              @click="openDataModal(source)"
+            >
+              📊 Gérer les données
+            </button>
+            <button 
+              v-if="source.type === 'azure-devops'" 
+              class="btn btn-info btn-sm" 
+              @click="runInitialCrawl(source._id)"
+              :disabled="crawlingInitial === source._id"
+            >
+              {{ crawlingInitial === source._id ? '⏳ Crawl...' : '🔄 Crawl initial' }}
+            </button>
+            <button 
+              v-if="source.type === 'azure-devops' && source.isActive && source.initialCrawlCompleted" 
+              class="btn btn-success btn-sm" 
+              @click="runManualCrawl(source._id)"
+              :disabled="crawlingManual === source._id"
+            >
+              {{ crawlingManual === source._id ? '⏳ Crawl...' : '▶️ Crawl manuel' }}
+            </button>
             <button class="btn btn-secondary btn-sm" @click="editSource(source)">Modifier</button>
             <button class="btn btn-danger btn-sm" @click="deleteSource(source._id)">Supprimer</button>
           </div>
         </div>
         <p class="source-description">{{ source.description || 'Aucune description' }}</p>
-        <div class="source-status">
-          <span :class="['status-badge', source.isActive ? 'active' : 'inactive']">
-            {{ source.isActive ? '✓ Actif' : '✗ Inactif' }}
-          </span>
+        <div class="source-info">
+          <div class="source-status">
+            <span :class="['status-badge', source.isActive ? 'active' : 'inactive']">
+              {{ source.isActive ? '✓ Actif' : '✗ Inactif' }}
+            </span>
+          </div>
+          <div v-if="source.type === 'azure-devops'" class="schedule-info">
+            <div v-if="!source.initialCrawlCompleted" class="initial-crawl-warning">
+              <small style="color: var(--warning-color, #f59e0b);">
+                ⚠️ Crawl initial non effectué - Les crawls automatiques sont désactivés
+              </small>
+            </div>
+            <div v-else-if="source.schedule" class="schedule-status">
+              <small>
+                ✅ Crawl initial effectué le {{ formatDate(source.initialCrawlCompletedAt) }}<br>
+                Crawl automatique: {{ formatSchedule(source.schedule) }}
+              </small>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Modal Add/Edit -->
-    <div v-if="showAddModal || editingSource" class="modal-overlay" @click.self="closeModal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3>{{ editingSource ? 'Modifier' : 'Ajouter' }} une source</h3>
-          <button class="close-btn" @click="closeModal">×</button>
-        </div>
-        <form @submit.prevent="saveSource" class="modal-form">
-          <div class="form-group">
-            <label class="form-label">Nom *</label>
-            <input type="text" class="form-input" v-model="sourceForm.name" required />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Type *</label>
-            <select class="form-select" v-model="sourceForm.type" required>
-              <option value="n8n">n8n</option>
-              <option value="api">API</option>
-              <option value="manual">Manuel</option>
-              <option value="webhook">Webhook</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Description</label>
-            <textarea class="form-textarea" v-model="sourceForm.description"></textarea>
-          </div>
-          <div class="form-group">
-            <label class="form-label">URL</label>
-            <input type="text" class="form-input" v-model="sourceForm.config.url" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Clé API</label>
-            <input type="password" class="form-input" v-model="sourceForm.config.apiKey" />
-          </div>
-          <div class="form-group">
-            <label>
-              <input type="checkbox" v-model="sourceForm.isActive" />
-              Actif
-            </label>
-          </div>
-          <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" @click="closeModal">Annuler</button>
-            <button type="submit" class="btn btn-primary" :disabled="saving">
-              {{ saving ? 'Enregistrement...' : 'Enregistrer' }}
-            </button>
-          </div>
-        </form>
-      </div>
+    <!-- Modal Type Selector -->
+    <div v-if="showTypeSelector" class="modal-overlay" @click.self="closeTypeSelector">
+      <DataSourceTypeSelector 
+        @select="handleTypeSelect"
+        @close="closeTypeSelector"
+      />
+    </div>
+
+    <!-- Modal Azure DevOps Form -->
+    <div v-if="showAzureDevOpsForm" class="modal-overlay" @click.self="closeAzureDevOpsForm">
+      <AzureDevOpsForm 
+        :source="editingSource"
+        @submit="handleAzureDevOpsSubmit"
+        @close="closeAzureDevOpsForm"
+      />
+    </div>
+
+    <!-- Modal Custom Form -->
+    <div v-if="showCustomForm" class="modal-overlay" @click.self="closeCustomForm">
+      <CustomDataSourceForm 
+        :source="editingSource"
+        @submit="handleCustomSubmit"
+        @close="closeCustomForm"
+      />
+    </div>
+
+    <!-- Modal Azure DevOps Data -->
+    <div v-if="showDataModal" class="modal-overlay" @click.self="closeDataModal">
+      <AzureDevOpsDataModal 
+        :sourceId="selectedSource?._id"
+        :sourceName="selectedSource?.name"
+        @close="closeDataModal"
+      />
     </div>
   </div>
 </template>
@@ -87,24 +111,23 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import api from '../api/client.js';
+import DataSourceTypeSelector from './DataSourceTypeSelector.vue';
+import AzureDevOpsForm from './AzureDevOpsForm.vue';
+import CustomDataSourceForm from './CustomDataSourceForm.vue';
+import AzureDevOpsDataModal from './AzureDevOpsDataModal.vue';
 
 const sources = ref([]);
 const loading = ref(false);
 const error = ref('');
-const showAddModal = ref(false);
+const showTypeSelector = ref(false);
+const showAzureDevOpsForm = ref(false);
+const showCustomForm = ref(false);
+const showDataModal = ref(false);
 const editingSource = ref(null);
-const saving = ref(false);
-
-const sourceForm = ref({
-  name: '',
-  type: 'n8n',
-  description: '',
-  config: {
-    url: '',
-    apiKey: ''
-  },
-  isActive: true
-});
+const selectedSource = ref(null);
+const crawlingInitial = ref(null);
+const crawlingManual = ref(null);
+const crawlResult = ref(null);
 
 const fetchSources = async () => {
   loading.value = true;
@@ -119,19 +142,88 @@ const fetchSources = async () => {
   }
 };
 
+const getSourceTypeLabel = (type) => {
+  const labels = {
+    'azure-devops': 'Azure DevOps',
+    'n8n': 'n8n',
+    'api': 'API',
+    'manual': 'Manuel',
+    'webhook': 'Webhook'
+  };
+  return labels[type] || type;
+};
+
+const formatSchedule = (schedule) => {
+  if (!schedule || !schedule.days || !schedule.hours) return 'Non configuré';
+  
+  const dayNames = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+  const days = schedule.days.map(d => dayNames[d]).join(', ');
+  const hours = schedule.hours.map(h => `${String(h).padStart(2, '0')}:00`).join(', ');
+  
+  return `${days} à ${hours}`;
+};
+
+const formatDate = (dateString) => {
+  if (!dateString) return 'Date inconnue';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
+const handleTypeSelect = (type) => {
+  showTypeSelector.value = false;
+  editingSource.value = null;
+  
+  if (type === 'azure-devops') {
+    showAzureDevOpsForm.value = true;
+  } else {
+    showCustomForm.value = true;
+  }
+};
+
 const editSource = (source) => {
   editingSource.value = source;
-  sourceForm.value = {
-    name: source.name,
-    type: source.type,
-    description: source.description || '',
-    config: {
-      url: source.config?.url || '',
-      apiKey: source.config?.apiKey || ''
-    },
-    isActive: source.isActive
-  };
-  showAddModal.value = true;
+  
+  if (source.type === 'azure-devops') {
+    showAzureDevOpsForm.value = true;
+  } else {
+    showCustomForm.value = true;
+  }
+};
+
+const handleAzureDevOpsSubmit = async (formData) => {
+  try {
+    if (editingSource.value) {
+      await api.put(`/admin/data-sources/${editingSource.value._id}`, formData);
+    } else {
+      await api.post('/admin/data-sources', formData);
+    }
+    closeAzureDevOpsForm();
+    await fetchSources();
+  } catch (err) {
+    error.value = err.response?.data?.error || 'Erreur lors de l\'enregistrement';
+    throw err;
+  }
+};
+
+const handleCustomSubmit = async (formData) => {
+  try {
+    if (editingSource.value) {
+      await api.put(`/admin/data-sources/${editingSource.value._id}`, formData);
+    } else {
+      await api.post('/admin/data-sources', formData);
+    }
+    closeCustomForm();
+    await fetchSources();
+  } catch (err) {
+    error.value = err.response?.data?.error || 'Erreur lors de l\'enregistrement';
+    throw err;
+  }
 };
 
 const deleteSource = async (id) => {
@@ -145,36 +237,73 @@ const deleteSource = async (id) => {
   }
 };
 
-const saveSource = async () => {
-  saving.value = true;
+const closeTypeSelector = () => {
+  showTypeSelector.value = false;
+};
+
+const closeAzureDevOpsForm = () => {
+  showAzureDevOpsForm.value = false;
+  editingSource.value = null;
+};
+
+const closeCustomForm = () => {
+  showCustomForm.value = false;
+  editingSource.value = null;
+};
+
+const openDataModal = (source) => {
+  selectedSource.value = source;
+  showDataModal.value = true;
+};
+
+const closeDataModal = () => {
+  showDataModal.value = false;
+  selectedSource.value = null;
+};
+
+const runInitialCrawl = async (sourceId) => {
+  if (!confirm('Voulez-vous exécuter le crawl initial ? Cela va découvrir tous les projets, pipelines, repositories et utilisateurs, et les sauvegarder pour remplir les filtres. Les crawls automatiques seront ensuite activés.')) {
+    return;
+  }
+  
+  crawlingInitial.value = sourceId;
+  crawlResult.value = null;
+  error.value = '';
+  
   try {
-    if (editingSource.value) {
-      await api.put(`/admin/data-sources/${editingSource.value._id}`, sourceForm.value);
-    } else {
-      await api.post('/admin/data-sources', sourceForm.value);
-    }
-    closeModal();
+    const response = await api.post(`/admin/data-sources/${sourceId}/crawl/initial`);
+    crawlResult.value = response.data;
+    const data = response.data.data || {};
+    alert(`✅ Crawl initial réussi !\n\n- ${data.projects?.length || 0} projets sauvegardés\n- ${data.pipelines?.length || 0} pipelines sauvegardés\n- ${data.repositories?.length || 0} repositories sauvegardés\n- ${data.users?.length || 0} utilisateurs sauvegardés\n\n✅ Les données sont maintenant disponibles pour les filtres.\n✅ Les crawls automatiques sont maintenant activés.`);
+    // Rafraîchir la liste pour afficher le statut mis à jour
     await fetchSources();
   } catch (err) {
-    error.value = err.response?.data?.error || 'Erreur lors de l\'enregistrement';
+    error.value = err.response?.data?.error || 'Erreur lors du crawl initial';
+    alert(`❌ Erreur: ${error.value}`);
   } finally {
-    saving.value = false;
+    crawlingInitial.value = null;
   }
 };
 
-const closeModal = () => {
-  showAddModal.value = false;
-  editingSource.value = null;
-  sourceForm.value = {
-    name: '',
-    type: 'n8n',
-    description: '',
-    config: {
-      url: '',
-      apiKey: ''
-    },
-    isActive: true
-  };
+const runManualCrawl = async (sourceId) => {
+  if (!confirm('Voulez-vous exécuter un crawl manuel maintenant ?')) {
+    return;
+  }
+  
+  crawlingManual.value = sourceId;
+  crawlResult.value = null;
+  error.value = '';
+  
+  try {
+    const response = await api.post(`/admin/data-sources/${sourceId}/crawl/manual`);
+    crawlResult.value = response.data;
+    alert(`✅ Crawl manuel réussi !\n\n- ${response.data.data?.pipelines?.length || 0} pipelines mis à jour\n- ${response.data.data?.repositories?.length || 0} repositories mis à jour`);
+  } catch (err) {
+    error.value = err.response?.data?.error || 'Erreur lors du crawl manuel';
+    alert(`❌ Erreur: ${error.value}`);
+  } finally {
+    crawlingManual.value = null;
+  }
 };
 
 onMounted(() => {
@@ -234,6 +363,30 @@ onMounted(() => {
 .source-actions {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.btn-info {
+  background: var(--info-color, #3b82f6);
+  color: white;
+}
+
+.btn-info:hover:not(:disabled) {
+  background: var(--info-color-dark, #2563eb);
+}
+
+.btn-success {
+  background: var(--success-color, #10b981);
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: var(--success-color-dark, #059669);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .source-description {
@@ -241,9 +394,22 @@ onMounted(() => {
   margin-bottom: 0.75rem;
 }
 
+.source-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .source-status {
   display: flex;
   align-items: center;
+}
+
+.schedule-info {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
 }
 
 .status-badge {

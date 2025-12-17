@@ -9,6 +9,8 @@ import siteRoutes from './routes/sites.js';
 import applicationRoutes from './routes/applications.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
+import pipelineLogRoutes from './routes/pipelineLogs.js';
+import { initializeBots } from './bots/index.js';
 
 dotenv.config();
 
@@ -34,6 +36,7 @@ app.use('/api/changelogs', changelogRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/sites', siteRoutes);
 app.use('/api/applications', applicationRoutes);
+app.use('/api/pipeline-logs', pipelineLogRoutes);
 
 // Gestion des erreurs
 app.use((err, req, res, next) => {
@@ -75,6 +78,11 @@ const startServer = async () => {
     app.listen(PORT, () => {
       console.log(`🚀 Chronicle API server running on port ${PORT}`);
       console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+      
+      // Initialiser les bots après le démarrage du serveur
+      initializeBots().catch(err => {
+        console.error('❌ Erreur lors de l\'initialisation des bots:', err);
+      });
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
