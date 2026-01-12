@@ -1,0 +1,27 @@
+{
+  "name": "chronicle",
+  "version": "1.0.0",
+  "description": "Chronicle - Gestion centralisée des changelogs",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "start:db": "docker-compose -f docker-compose.dev-db.yml up",
+    "start:db:detached": "docker-compose -f docker-compose.dev-db.yml up -d",
+    "stop:db": "docker-compose -f docker-compose.dev-db.yml down",
+    "check:db": "cd backend && node scripts/check-mongodb.js",
+    "fix:env": "node scripts/fix-env.js"
+  },
+  "keywords": [
+    "changelog",
+    "api",
+    "express",
+    "mongodb",
+    "vue"
+  ],
+  "author": "Alexandre MALAISE",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

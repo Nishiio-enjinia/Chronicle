@@ -6,8 +6,35 @@
       <span class="breadcrumb-item active">Changelogs</span>
     </div>
 
-    <!-- Filtres -->
-    <div class="filters-compact">
+    <!-- Tabs pour basculer entre Changelogs et Logs -->
+    <div class="tabs-container">
+      <div class="tabs">
+        <router-link 
+          to="/" 
+          class="tab"
+          :class="{ 'active': $route.path === '/' || $route.path === '/changelogs' }"
+        >
+          <span class="tab-icon">📝</span>
+          <span class="tab-label">Changelogs</span>
+        </router-link>
+        <router-link 
+          to="/pipeline-logs" 
+          class="tab"
+          :class="{ 'active': $route.path === '/pipeline-logs' }"
+        >
+          <span class="tab-icon">🔧</span>
+          <span class="tab-label">Logs Pipelines</span>
+        </router-link>
+      </div>
+    </div>
+
+    <!-- Contenu conditionnel selon la route -->
+    <div v-if="$route.path === '/pipeline-logs'" class="tab-content">
+      <PipelineLogsView :key="'pipeline-logs'" />
+    </div>
+    <div v-else class="tab-content">
+      <!-- Filtres -->
+      <div class="filters-compact">
       <div class="filters-header-compact" @click="toggleFilters">
         <span class="filters-icon">🔍</span>
         <span class="filters-label">Filtres</span>
@@ -86,21 +113,21 @@
           </div>
         </div>
       </div>
-    </div>
+      </div>
 
-    <!-- Erreur -->
-    <div v-if="changelogsStore.error" class="error">
-      {{ changelogsStore.error }}
-    </div>
+      <!-- Erreur -->
+      <div v-if="changelogsStore.error" class="error">
+        {{ changelogsStore.error }}
+      </div>
 
-    <!-- Liste des changelogs -->
-    <div v-if="changelogsStore.loading" class="loading">
-      Chargement...
-    </div>
-    <div v-else-if="changelogsStore.changelogs.length === 0" class="card">
-      <p>Aucun changelog trouvé avec ces filtres.</p>
-    </div>
-    <div v-else>
+      <!-- Liste des changelogs -->
+      <div v-if="changelogsStore.loading" class="loading">
+        Chargement...
+      </div>
+      <div v-else-if="changelogsStore.changelogs.length === 0" class="card">
+        <p>Aucun changelog trouvé avec ces filtres.</p>
+      </div>
+      <div v-else>
       <div 
         v-for="changelog in changelogsStore.changelogs" 
         :key="changelog._id"
@@ -159,6 +186,7 @@
           Suivant
         </button>
       </div>
+      </div>
     </div>
   </div>
 </template>
@@ -167,6 +195,7 @@
 import { onMounted, watch, ref } from 'vue';
 import { useChangelogsStore } from '../stores/changelogs.js';
 import { format } from 'date-fns';
+import PipelineLogsView from './PipelineLogsView.vue';
 
 const changelogsStore = useChangelogsStore();
 const filtersCollapsed = ref(false);
@@ -523,6 +552,56 @@ const getChangeTypeLabel = (type) => {
   transform: none !important;
 }
 
+.tabs-container {
+  margin-bottom: 1.5rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 2px solid var(--border-color);
+  padding-bottom: 0;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  text-decoration: none;
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 0.875rem;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+  font-weight: 600;
+}
+
+.tab-icon {
+  font-size: 1rem;
+}
+
+.tab-label {
+  white-space: nowrap;
+}
+
+.tab-content {
+  margin-top: 0;
+  min-height: 200px;
+}
+
 @media (max-width: 768px) {
   .changelog-header {
     flex-direction: column;
@@ -537,6 +616,15 @@ const getChangeTypeLabel = (type) => {
     flex-direction: column;
     align-items: flex-start;
     gap: 1rem;
+  }
+
+  .tabs {
+    flex-wrap: wrap;
+  }
+
+  .tab {
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
   }
 }
 </style>

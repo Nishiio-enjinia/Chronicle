@@ -55,45 +55,47 @@ docker-compose down -v
 
 ---
 
-## Option 2 : Lancement en Mode Développement
+## Option 2 : Lancement en Mode Développement (Recommandé pour le dev) ⚡
 
-Pour développer ou modifier le code localement.
+Pour développer ou modifier le code localement avec hot-reload automatique.
 
 ### Prérequis
 
 - Node.js 20+ installé
-- MongoDB installé et démarré (ou utiliser Docker uniquement pour MongoDB)
+- Docker (uniquement pour MongoDB)
 
-### Étape 1 : Installer MongoDB (si pas déjà fait)
+### Étape 1 : Lancer MongoDB avec Docker
 
-**Option A : Avec Docker (recommandé)**
 ```bash
-docker run -d -p 27017:27017 --name mongodb mongo:7.0
-```
+# Lancer uniquement MongoDB
+docker-compose -f docker-compose.dev-db.yml up -d
 
-**Option B : Installation locale**
-- Téléchargez MongoDB depuis https://www.mongodb.com/try/download/community
-- Démarrez le service MongoDB
+# Ou en mode attaché pour voir les logs
+docker-compose -f docker-compose.dev-db.yml up
+```
 
 ### Étape 2 : Configurer l'environnement
 
 ```bash
 # Copier le template
-cp backend/.env.template backend/.env
+cp backend/env.template backend/.env
 
-# Éditer backend/.env et modifier si nécessaire :
+# Le fichier .env est déjà configuré pour localhost par défaut
 # MONGODB_URI=mongodb://localhost:27017/chronicle
 ```
 
 ### Étape 3 : Installer les dépendances
 
 ```bash
-# Backend
+# Installer les dépendances à la racine (concurrently)
+npm install
+
+# Installer les dépendances du backend
 cd backend
 npm install
 cd ..
 
-# Frontend
+# Installer les dépendances du frontend
 cd frontend
 npm install
 cd ..
@@ -101,20 +103,18 @@ cd ..
 
 ### Étape 4 : Lancer les services
 
-**Méthode 1 : Scripts automatiques**
+**Méthode recommandée : Une seule commande** 🚀
 
-Sur Windows (PowerShell) :
-```powershell
-.\scripts\start.ps1 dev
-```
-
-Sur Linux/Mac :
 ```bash
-chmod +x scripts/start.sh
-./scripts/start.sh dev
+# À la racine du projet
+npm run dev
 ```
 
-**Méthode 2 : Manuel (2 terminaux)**
+Cette commande lance automatiquement :
+- Le backend avec nodemon (hot-reload)
+- Le frontend avec Vite (hot-reload)
+
+**Méthode alternative : Lancer séparément**
 
 Terminal 1 - Backend :
 ```bash
@@ -133,33 +133,27 @@ npm run dev
 - **Frontend** : http://localhost:5173
 - **Backend API** : http://localhost:3000
 
+### Commandes utiles
+
+```bash
+# Lancer MongoDB en arrière-plan
+npm run start:db:detached
+
+# Arrêter MongoDB
+npm run stop:db
+
+# Lancer uniquement le backend
+npm run dev:backend
+
+# Lancer uniquement le frontend
+npm run dev:frontend
+```
+
 ---
 
 ## Option 3 : Lancement Mixte (MongoDB en Docker, App en local)
 
-Parfait si vous voulez modifier le code rapidement sans reconstruire les images Docker.
-
-### Étape 1 : Lancer uniquement MongoDB
-
-```bash
-docker-compose up -d mongodb
-```
-
-### Étape 2 : Configurer et lancer l'application
-
-```bash
-# Configurer
-cp backend/.env.template backend/.env
-# Modifier backend/.env : MONGODB_URI=mongodb://localhost:27017/chronicle
-
-# Installer les dépendances
-cd backend && npm install && cd ..
-cd frontend && npm install && cd ..
-
-# Lancer (2 terminaux ou avec les scripts)
-cd backend && npm run dev
-cd frontend && npm run dev
-```
+⚠️ **Cette option est maintenant intégrée dans l'Option 2**. Utilisez plutôt l'Option 2 qui est plus simple et plus rapide.
 
 ---
 

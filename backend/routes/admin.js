@@ -7,8 +7,11 @@ import AzureDevOpsProject from '../models/AzureDevOpsProject.js';
 import AzureDevOpsPipeline from '../models/AzureDevOpsPipeline.js';
 import AzureDevOpsRepository from '../models/AzureDevOpsRepository.js';
 import AzureDevOpsUser from '../models/AzureDevOpsUser.js';
+import KeywordGroup from '../models/KeywordGroup.js';
+import PipelineLog from '../models/PipelineLog.js';
 import jwt from 'jsonwebtoken';
 import { runManualCrawl, runInitialCrawl } from '../bots/index.js';
+import { analyzeKeywords } from '../services/keywordAnalyzer.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'chronicle-secret-key-change-in-production';
@@ -265,6 +268,62 @@ router.post('/data-sources/:id/crawl/manual', requireAdmin, async (req, res) => 
   }
 });
 
+// Réinitialiser toutes les données d'une source (garde la configuration)
+router.post('/data-sources/:id/reset', requireAdmin, async (req, res) => {
+  try {
+    const sourceId = req.params.id;
+    
+    // Vérifier que la source existe
+    const source = await DataSource.findById(sourceId);
+    if (!source) {
+      return res.status(404).json({ error: 'Source de données non trouvée' });
+    }
+    
+    // Supprimer toutes les données importées
+    const PipelineLog = (await import('../models/PipelineLog.js')).default;
+    const KeywordGroup = (await import('../models/KeywordGroup.js')).default;
+    
+    // Supprimer les logs de pipelines
+    const logsDeleted = await PipelineLog.deleteMany({ dataSourceId: sourceId });
+    
+    // Supprimer les groupes de mots-clés
+    const keywordsDeleted = await KeywordGroup.deleteMany({ dataSourceId: sourceId });
+    
+    // Supprimer les projets Azure DevOps
+    const projectsDeleted = await AzureDevOpsProject.deleteMany({ dataSourceId: sourceId });
+    
+    // Supprimer les pipelines Azure DevOps
+    const pipelinesDeleted = await AzureDevOpsPipeline.deleteMany({ dataSourceId: sourceId });
+    
+    // Supprimer les repositories Azure DevOps
+    const repositoriesDeleted = await AzureDevOpsRepository.deleteMany({ dataSourceId: sourceId });
+    
+    // Supprimer les utilisateurs Azure DevOps
+    const usersDeleted = await AzureDevOpsUser.deleteMany({ dataSourceId: sourceId });
+    
+    // Réinitialiser les indicateurs de crawl dans la source
+    source.initialCrawlCompleted = false;
+    source.initialCrawlCompletedAt = null;
+    await source.save();
+    
+    res.json({
+      success: true,
+      message: 'Toutes les données ont été réinitialisées',
+      deleted: {
+        logs: logsDeleted.deletedCount,
+        keywordGroups: keywordsDeleted.deletedCount,
+        projects: projectsDeleted.deletedCount,
+        pipelines: pipelinesDeleted.deletedCount,
+        repositories: repositoriesDeleted.deletedCount,
+        users: usersDeleted.deletedCount
+      }
+    });
+  } catch (error) {
+    console.error('Erreur lors de la réinitialisation des données:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ========== DONNÉES AZURE DEVOPS (pour filtres) ==========
 // Récupérer les projets d'une source
 router.get('/data-sources/:id/azure-devops/projects', requireAdmin, async (req, res) => {
@@ -454,6 +513,123 @@ router.delete('/public-pages/:id', requireAdmin, async (req, res) => {
     }
     res.json({ message: 'Page deleted' });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== GESTION DES GROUPES DE MOTS-CLÉS ==========
+router.get('/keyword-groups', requireAdmin, async (req, res) => {
+  try {
+    const { dataSourceId } = req.query;
+    const query = {};
+    if (dataSourceId) {
+      query.dataSourceId = dataSourceId;
+    }
+    const groups = await KeywordGroup.find(query)
+      .sort({ keyword: 1 })
+      .lean();
+    res.json(groups);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/keyword-groups', requireAdmin, async (req, res) => {
+  try {
+    const { dataSourceId, keyword, displayName, items, isVisible } = req.body;
+    
+    // Dédupliquer les items par ID
+    const deduplicatedItems = [];
+    const seenIds = new Set();
+    if (items && Array.isArray(items)) {
+      items.forEach(item => {
+        const itemId = item.id || item._id;
+        if (itemId && !seenIds.has(itemId)) {
+          seenIds.add(itemId);
+          deduplicatedItems.push({
+            id: itemId,
+            name: item.name || itemId,
+            type: item.type || 'pipeline'
+          });
+        }
+      });
+    }
+    
+    // Vérifier si le groupe existe déjà
+    const existing = await KeywordGroup.findOne({ dataSourceId, keyword });
+    if (existing) {
+      // Mettre à jour le groupe existant avec les items dédupliqués
+      existing.items = deduplicatedItems.length > 0 ? deduplicatedItems : existing.items;
+      if (displayName !== undefined) existing.displayName = displayName;
+      if (isVisible !== undefined) existing.isVisible = isVisible;
+      await existing.save();
+      return res.json(existing);
+    }
+    
+    // Créer un nouveau groupe
+    const group = new KeywordGroup({
+      dataSourceId,
+      keyword,
+      displayName,
+      items: deduplicatedItems,
+      isVisible: isVisible !== undefined ? isVisible : true
+    });
+    await group.save();
+    res.status(201).json(group);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.put('/keyword-groups/:id', requireAdmin, async (req, res) => {
+  try {
+    const group = await KeywordGroup.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true, runValidators: true }
+    );
+    if (!group) {
+      return res.status(404).json({ error: 'Groupe non trouvé' });
+    }
+    res.json(group);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.delete('/keyword-groups/:id', requireAdmin, async (req, res) => {
+  try {
+    const group = await KeywordGroup.findByIdAndDelete(req.params.id);
+    if (!group) {
+      return res.status(404).json({ error: 'Groupe non trouvé' });
+    }
+    res.json({ message: 'Groupe supprimé' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== ANALYSE IA DES MOTS-CLÉS ==========
+router.post('/keyword-groups/analyze', requireAdmin, async (req, res) => {
+  try {
+    const { dataSourceId } = req.body;
+    
+    if (!dataSourceId) {
+      return res.status(400).json({ error: 'dataSourceId requis' });
+    }
+    
+    // Vérifier que la source existe
+    const dataSource = await DataSource.findById(dataSourceId);
+    if (!dataSource) {
+      return res.status(404).json({ error: 'Source de données non trouvée' });
+    }
+    
+    // Analyser les logs pour détecter les mots-clés
+    const analysisResult = await analyzeKeywords(dataSourceId);
+    
+    res.json(analysisResult);
+  } catch (error) {
+    console.error('Erreur lors de l\'analyse IA:', error);
     res.status(500).json({ error: error.message });
   }
 });

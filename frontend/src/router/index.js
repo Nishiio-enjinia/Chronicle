@@ -11,14 +11,18 @@ const routes = [
     component: ChangelogsView
   },
   {
-    path: '/events',
-    name: 'events',
-    component: EventsView
+    path: '/changelogs',
+    redirect: '/'
   },
   {
     path: '/pipeline-logs',
     name: 'pipeline-logs',
-    component: PipelineLogsView
+    component: ChangelogsView
+  },
+  {
+    path: '/events',
+    name: 'events',
+    component: EventsView
   },
   {
     path: '/admin',

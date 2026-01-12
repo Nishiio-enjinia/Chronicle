@@ -1,102 +1,174 @@
 <template>
   <div class="pipeline-logs-view">
-    <div class="breadcrumb">
-      <span class="breadcrumb-item">📋 Chronicle</span>
-      <span class="breadcrumb-separator">/</span>
-      <span class="breadcrumb-item active">Logs Pipelines & Publications</span>
-    </div>
 
-    <!-- Filtres avec regroupement par mots-clés -->
+    <!-- Filtres -->
     <div class="filters-compact">
-      <div class="filters-header-compact" @click="toggleFilters">
+      <div class="filters-header-compact">
         <span class="filters-icon">🔍</span>
         <span class="filters-label">Filtres</span>
-        <button class="collapse-btn" :class="{ 'collapsed': filtersCollapsed }">
-          <span v-if="filtersCollapsed">▼</span>
-          <span v-else>▲</span>
-        </button>
       </div>
-      <div class="filters-content-compact" :class="{ 'collapsed': filtersCollapsed }">
+      <div class="filters-content-compact">
         <!-- Source de données -->
         <div class="filters-row">
           <div class="form-group-compact">
             <label class="form-label-compact">Source</label>
-            <select 
-              class="form-select-compact" 
-              v-model="filters.dataSourceId"
-              @change="handleFilterChange"
-            >
-              <option value="">Toutes les sources</option>
-              <option v-for="source in dataSources" :key="source._id" :value="source._id">
-                {{ source.name }}
-              </option>
-            </select>
+            <div class="search-input-wrapper">
+              <div class="search-input-container" :class="{ 'has-badges': filters.dataSourceIds.length > 0 }">
+                <!-- Badges des éléments sélectionnés -->
+                <div v-if="filters.dataSourceIds.length > 0" class="selected-badges-inline">
+                  <span 
+                    v-for="sourceId in filters.dataSourceIds" 
+                    :key="sourceId"
+                    class="selected-badge"
+                  >
+                    {{ getDataSourceName(sourceId) }}
+                    <button 
+                      class="badge-remove"
+                      @click.stop="removeDataSource(sourceId)"
+                      title="Retirer"
+                    >
+                      ×
+                    </button>
+                  </span>
+                </div>
+                <input 
+                  type="text" 
+                  class="search-input-compact" 
+                  :class="{ 'with-badges': filters.dataSourceIds.length > 0 }"
+                  :placeholder="filters.dataSourceIds.length > 0 ? '' : 'Rechercher une source...'"
+                  v-model="searchDataSource"
+                  @focus="showDataSourceDropdown = true"
+                  @blur="setTimeout(() => showDataSourceDropdown = false, 200)"
+                  @input="showDataSourceDropdown = true"
+                />
+                <span v-if="isSearchingDataSource" class="search-loading">🔍</span>
+              </div>
+              <div v-if="showDataSourceDropdown" class="search-dropdown">
+                <div 
+                  v-for="source in filteredDataSources" 
+                  :key="source._id"
+                  class="search-dropdown-item"
+                  :class="{ 'selected': filters.dataSourceIds.includes(source._id) }"
+                  @mousedown.prevent="toggleDataSource(source)"
+                >
+                  <span class="checkbox-indicator">{{ filters.dataSourceIds.includes(source._id) ? '✓' : '' }}</span>
+                  {{ source.name }}
+                </div>
+                <div 
+                  v-if="searchDataSource && filteredDataSources.length === 0"
+                  class="search-dropdown-item no-results"
+                >
+                  Aucun résultat
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Projet -->
           <div class="form-group-compact">
             <label class="form-label-compact">Projet</label>
-            <select 
-              class="form-select-compact" 
-              v-model="filters.projectId"
-              @change="handleFilterChange"
-            >
-              <option value="">Tous les projets</option>
-              <option v-for="project in filteredProjects" :key="project._id" :value="project.projectId">
-                {{ project.displayName || project.name }}
-              </option>
-            </select>
+            <div class="search-input-wrapper">
+              <div class="search-input-container" :class="{ 'has-badges': filters.projectIds.length > 0 }">
+                <!-- Badges des éléments sélectionnés -->
+                <div v-if="filters.projectIds.length > 0" class="selected-badges-inline">
+                  <span 
+                    v-for="projectId in filters.projectIds" 
+                    :key="projectId"
+                    class="selected-badge"
+                  >
+                    {{ getProjectName(projectId) }}
+                    <button 
+                      class="badge-remove"
+                      @click.stop="removeProject(projectId)"
+                      title="Retirer"
+                    >
+                      ×
+                    </button>
+                  </span>
+                </div>
+                <input 
+                  type="text" 
+                  class="search-input-compact" 
+                  :class="{ 'with-badges': filters.projectIds.length > 0 }"
+                  :placeholder="filters.projectIds.length > 0 ? '' : 'Rechercher un projet...'"
+                  v-model="searchProject"
+                  @focus="showProjectDropdown = true"
+                  @blur="setTimeout(() => showProjectDropdown = false, 200)"
+                  @input="showProjectDropdown = true"
+                />
+                <span v-if="isSearchingProject" class="search-loading">🔍</span>
+              </div>
+              <div v-if="showProjectDropdown" class="search-dropdown">
+                <div 
+                  v-for="project in filteredProjects" 
+                  :key="project._id"
+                  class="search-dropdown-item"
+                  :class="{ 'selected': filters.projectIds.includes(project.projectId) }"
+                  @mousedown.prevent="toggleProject(project)"
+                >
+                  <span class="checkbox-indicator">{{ filters.projectIds.includes(project.projectId) ? '✓' : '' }}</span>
+                  {{ project.displayName || project.name }}
+                </div>
+                <div 
+                  v-if="searchProject && filteredProjects.length === 0"
+                  class="search-dropdown-item no-results"
+                >
+                  Aucun résultat
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Pipeline -->
           <div class="form-group-compact">
             <label class="form-label-compact">Pipeline</label>
-            <select 
-              class="form-select-compact" 
-              v-model="filters.pipelineId"
-              @change="handleFilterChange"
-            >
-              <option value="">Tous les pipelines</option>
-              <option v-for="pipeline in filteredPipelines" :key="pipeline._id" :value="pipeline.pipelineId">
-                {{ pipeline.displayName || pipeline.name }}
-              </option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Regroupement par mots-clés -->
-        <div class="filters-row">
-          <div class="form-group-compact keywords-group">
-            <label class="form-label-compact">Environnements / Mots-clés</label>
-            <div class="keywords-tree">
-              <div 
-                v-for="keywordGroup in keywordGroups" 
-                :key="keywordGroup.keyword"
-                class="keyword-group"
-              >
-                <label class="keyword-parent">
-                  <input 
-                    type="checkbox" 
-                    :checked="isKeywordGroupSelected(keywordGroup.keyword)"
-                    @change="toggleKeywordGroup(keywordGroup.keyword)"
-                  />
-                  <span class="keyword-label">{{ keywordGroup.keyword }}</span>
-                  <span class="keyword-count">({{ keywordGroup.items.length }})</span>
-                </label>
-                <div class="keyword-children">
-                  <label 
-                    v-for="item in keywordGroup.items" 
-                    :key="item.id"
-                    class="keyword-child"
+            <div class="search-input-wrapper">
+              <div class="search-input-container" :class="{ 'has-badges': filters.pipelineIds.length > 0 }">
+                <!-- Badges des éléments sélectionnés -->
+                <div v-if="filters.pipelineIds.length > 0" class="selected-badges-inline">
+                  <span 
+                    v-for="pipelineId in filters.pipelineIds" 
+                    :key="pipelineId"
+                    class="selected-badge"
                   >
-                    <input 
-                      type="checkbox" 
-                      :value="item.id"
-                      v-model="filters.keywords"
-                      @change="handleFilterChange"
-                    />
-                    <span>{{ item.name }}</span>
-                  </label>
+                    {{ getPipelineName(pipelineId) }}
+                    <button 
+                      class="badge-remove"
+                      @click.stop="removePipeline(pipelineId)"
+                      title="Retirer"
+                    >
+                      ×
+                    </button>
+                  </span>
+                </div>
+                <input 
+                  type="text" 
+                  class="search-input-compact" 
+                  :class="{ 'with-badges': filters.pipelineIds.length > 0 }"
+                  :placeholder="filters.pipelineIds.length > 0 ? '' : 'Rechercher un pipeline...'"
+                  v-model="searchPipeline"
+                  @focus="showPipelineDropdown = true"
+                  @blur="setTimeout(() => showPipelineDropdown = false, 200)"
+                  @input="showPipelineDropdown = true"
+                />
+                <span v-if="isSearchingPipeline" class="search-loading">🔍</span>
+              </div>
+              <div v-if="showPipelineDropdown" class="search-dropdown">
+                <div 
+                  v-for="pipeline in filteredPipelines" 
+                  :key="pipeline._id"
+                  class="search-dropdown-item"
+                  :class="{ 'selected': filters.pipelineIds.includes(pipeline.pipelineId) }"
+                  @mousedown.prevent="togglePipeline(pipeline)"
+                >
+                  <span class="checkbox-indicator">{{ filters.pipelineIds.includes(pipeline.pipelineId) ? '✓' : '' }}</span>
+                  {{ pipeline.displayName || pipeline.name }}
+                </div>
+                <div 
+                  v-if="searchPipeline && filteredPipelines.length === 0"
+                  class="search-dropdown-item no-results"
+                >
+                  Aucun résultat
                 </div>
               </div>
             </div>
@@ -111,7 +183,6 @@
               type="date" 
               class="form-input-compact"
               v-model="filters.startDate"
-              @change="handleFilterChange"
             />
           </div>
           <div class="form-group-compact">
@@ -120,10 +191,9 @@
               type="date" 
               class="form-input-compact"
               v-model="filters.endDate"
-              @change="handleFilterChange"
             />
           </div>
-          <div class="form-group-compact">
+          <div class="form-group-compact form-group-button">
             <button class="btn btn-secondary btn-xs" @click.stop="resetFilters">
               Réinitialiser
             </button>
@@ -135,8 +205,29 @@
     <!-- Liste des logs -->
     <div v-if="loading" class="loading">Chargement...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
-    <div v-else-if="logs.length === 0" class="card">
-      <p>Aucun log trouvé avec ces filtres.</p>
+    <div v-else-if="error && (error.includes('401') || error.includes('No token'))" class="card">
+      <div class="empty-state">
+        <div class="empty-icon">🔐</div>
+        <h3>Authentification requise</h3>
+        <p>Vous devez être connecté pour accéder aux logs de pipelines.</p>
+        <p class="empty-hint">Veuillez vous connecter en utilisant le bouton de connexion dans la barre latérale.</p>
+      </div>
+    </div>
+    <div v-else-if="dataSources.length === 0 && !error" class="card">
+      <div class="empty-state">
+        <div class="empty-icon">📊</div>
+        <h3>Aucune source de données disponible</h3>
+        <p>Il n'y a actuellement aucune source de données Azure DevOps configurée et initialisée.</p>
+        <p class="empty-hint">Veuillez configurer une source de données dans le Back Office.</p>
+      </div>
+    </div>
+    <div v-else-if="logs.length === 0 && !loading" class="card">
+      <div class="empty-state">
+        <div class="empty-icon">🔍</div>
+        <h3>Aucun log trouvé</h3>
+        <p>Aucun log ne correspond aux filtres sélectionnés.</p>
+        <p class="empty-hint">Essayez de modifier les filtres ou de sélectionner une autre source de données.</p>
+      </div>
     </div>
     <div v-else class="logs-list">
       <div 
@@ -216,24 +307,43 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import api from '../api/client.js';
 import { format } from 'date-fns';
+import { smartSearch } from '../services/semanticSearch.js';
 
-const filtersCollapsed = ref(false);
 const loading = ref(false);
 const error = ref('');
 const logs = ref([]);
 const dataSources = ref([]);
 const projects = ref([]);
 const pipelines = ref([]);
-const keywordGroups = ref([]);
+const isUpdatingFilters = ref(false); // Flag pour éviter les boucles infinies
+const isMounted = ref(false); // Flag pour éviter les appels pendant le montage
+
+// Recherches pour les filtres
+const searchDataSource = ref('');
+const searchProject = ref('');
+const searchPipeline = ref('');
+
+// Résultats de recherche sémantique
+const semanticDataSourcesResults = ref([]);
+const semanticProjectsResults = ref([]);
+const semanticPipelinesResults = ref([]);
+
+const isSearchingDataSource = ref(false);
+const isSearchingProject = ref(false);
+const isSearchingPipeline = ref(false);
+
+// États pour les dropdowns
+const showDataSourceDropdown = ref(false);
+const showProjectDropdown = ref(false);
+const showPipelineDropdown = ref(false);
 
 const filters = ref({
-  dataSourceId: '',
-  projectId: '',
-  pipelineId: '',
-  keywords: [],
+  dataSourceIds: [], // Tableau pour sélection multiple
+  projectIds: [], // Tableau pour sélection multiple
+  pipelineIds: [], // Tableau pour sélection multiple
   startDate: '',
   endDate: ''
 });
@@ -245,49 +355,122 @@ const pagination = ref({
   pages: 0
 });
 
-const toggleFilters = () => {
-  filtersCollapsed.value = !filtersCollapsed.value;
+
+// Fonction pour effectuer la recherche sémantique
+const performSemanticSearch = async (query, items, fields, resultRef, loadingRef) => {
+  if (!query || query.trim().length === 0) {
+    resultRef.value = items;
+    return;
+  }
+
+  loadingRef.value = true;
+  try {
+    const results = await smartSearch(query, items, {
+      fields,
+      threshold: 0.25,
+    });
+    resultRef.value = results;
+  } catch (error) {
+    console.error('Erreur recherche sémantique:', error);
+    // Fallback sur recherche textuelle
+    const search = query.toLowerCase();
+    resultRef.value = items.filter(item =>
+      fields.some(field => {
+        const value = item[field];
+        return value && String(value).toLowerCase().includes(search);
+      })
+    );
+  } finally {
+    loadingRef.value = false;
+  }
 };
 
+// Watchers pour déclencher la recherche sémantique avec debounce
+let searchDebounceTimer = null;
+const debounceSearch = (query, items, fields, resultRef, loadingRef) => {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => {
+    performSemanticSearch(query, items, fields, resultRef, loadingRef);
+  }, 300);
+};
+
+// Watcher pour les sources de données
+watch([searchDataSource, dataSources], ([query, items]) => {
+  debounceSearch(query, items, ['name'], semanticDataSourcesResults, isSearchingDataSource);
+}, { immediate: true });
+
+// Watcher pour les projets - filtrer dynamiquement selon les sources sélectionnées
+watch([searchProject, projects, () => filters.value.dataSourceIds], ([query, items, dataSourceIds]) => {
+  let filtered = items;
+  // Si des sources sont sélectionnées, filtrer par ces sources
+  // Sinon, afficher tous les projets
+  if (dataSourceIds && dataSourceIds.length > 0) {
+    filtered = filtered.filter(p => dataSourceIds.includes(p.dataSourceId));
+  }
+  // Ne pas exclure les projets déjà sélectionnés - ils doivent apparaître avec une coche
+  debounceSearch(query, filtered, ['name', 'displayName'], semanticProjectsResults, isSearchingProject);
+}, { immediate: true });
+
+// Watcher pour les pipelines - filtrer dynamiquement selon les sources et projets sélectionnés
+watch([searchPipeline, pipelines, () => filters.value.dataSourceIds, () => filters.value.projectIds], 
+  ([query, items, dataSourceIds, projectIds]) => {
+    let filtered = items;
+    // Si des sources sont sélectionnées, filtrer par ces sources
+    // Sinon, afficher tous les pipelines
+    if (dataSourceIds && dataSourceIds.length > 0) {
+      filtered = filtered.filter(p => dataSourceIds.includes(p.dataSourceId));
+    }
+    if (projectIds && projectIds.length > 0) {
+      filtered = filtered.filter(p => projectIds.includes(p.projectId));
+    }
+    // Ne pas exclure les pipelines déjà sélectionnés - ils doivent apparaître avec une coche
+    debounceSearch(query, filtered, ['name', 'displayName'], semanticPipelinesResults, isSearchingPipeline);
+  }, { immediate: true });
+
+// Computed properties avec fallback
+const filteredDataSources = computed(() => {
+  // Ne pas exclure les éléments sélectionnés - ils doivent apparaître avec une coche
+  if (!searchDataSource.value) return dataSources.value;
+  return semanticDataSourcesResults.value.length > 0 
+    ? semanticDataSourcesResults.value 
+    : dataSources.value;
+});
+
 const filteredProjects = computed(() => {
-  if (!filters.value.dataSourceId) return [];
-  return projects.value.filter(p => p.dataSourceId === filters.value.dataSourceId);
+  // Filtrer dynamiquement en fonction des sources sélectionnées
+  // Si aucune source n'est sélectionnée, afficher tous les projets
+  let baseFiltered = projects.value;
+  if (filters.value.dataSourceIds.length > 0) {
+    baseFiltered = baseFiltered.filter(p => filters.value.dataSourceIds.includes(p.dataSourceId));
+  }
+  
+  // Ne pas exclure les projets déjà sélectionnés - ils doivent apparaître avec une coche
+  
+  if (!searchProject.value) return baseFiltered;
+  return semanticProjectsResults.value.length > 0 
+    ? semanticProjectsResults.value
+    : baseFiltered;
 });
 
 const filteredPipelines = computed(() => {
-  if (!filters.value.dataSourceId) return [];
-  let filtered = pipelines.value.filter(p => p.dataSourceId === filters.value.dataSourceId);
-  if (filters.value.projectId) {
-    filtered = filtered.filter(p => p.projectId === filters.value.projectId);
+  // Filtrer dynamiquement en fonction des sources et projets sélectionnés
+  // Si aucune source n'est sélectionnée, afficher tous les pipelines
+  let filtered = pipelines.value;
+  if (filters.value.dataSourceIds.length > 0) {
+    filtered = filtered.filter(p => filters.value.dataSourceIds.includes(p.dataSourceId));
   }
-  return filtered;
+  if (filters.value.projectIds.length > 0) {
+    filtered = filtered.filter(p => filters.value.projectIds.includes(p.projectId));
+  }
+  
+  // Ne pas exclure les pipelines déjà sélectionnés - ils doivent apparaître avec une coche
+  
+  if (!searchPipeline.value) return filtered;
+  return semanticPipelinesResults.value.length > 0 
+    ? semanticPipelinesResults.value
+    : filtered;
 });
 
-const isKeywordGroupSelected = (keyword) => {
-  const group = keywordGroups.value.find(kg => kg.keyword === keyword);
-  if (!group) return false;
-  return group.items.every(item => filters.value.keywords.includes(item.id));
-};
-
-const toggleKeywordGroup = (keyword) => {
-  const group = keywordGroups.value.find(kg => kg.keyword === keyword);
-  if (!group) return;
-  
-  const allSelected = group.items.every(item => filters.value.keywords.includes(item.id));
-  
-  if (allSelected) {
-    // Décocher tous
-    filters.value.keywords = filters.value.keywords.filter(
-      id => !group.items.some(item => item.id === id)
-    );
-  } else {
-    // Cocher tous
-    const newKeywords = group.items.map(item => item.id);
-    filters.value.keywords = [...new Set([...filters.value.keywords, ...newKeywords])];
-  }
-  
-  handleFilterChange();
-};
 
 const getLogTypeLabel = (type) => {
   const labels = {
@@ -320,91 +503,118 @@ const fetchDataSources = async () => {
     const response = await api.get('/admin/data-sources');
     dataSources.value = response.data.filter(s => s.type === 'azure-devops' && s.initialCrawlCompleted);
   } catch (err) {
+    // Ne pas afficher d'erreur si c'est une erreur d'authentification (401)
+    if (err.response?.status === 401) {
+      // L'utilisateur n'est pas authentifié, on laisse le composant gérer l'affichage
+      dataSources.value = [];
+      return;
+    }
     console.error('Erreur lors du chargement des sources:', err);
+    error.value = 'Erreur lors du chargement des sources de données';
   }
 };
 
 const fetchProjects = async () => {
-  if (!filters.value.dataSourceId) {
-    projects.value = [];
-    return;
-  }
   try {
-    const response = await api.get(`/admin/data-sources/${filters.value.dataSourceId}/azure-devops/projects`);
-    projects.value = response.data.filter(p => p.isVisible);
+    // Si aucune source n'est sélectionnée, charger les projets de toutes les sources
+    const sourcesToFetch = filters.value.dataSourceIds.length > 0 
+      ? filters.value.dataSourceIds 
+      : dataSources.value.map(s => s._id);
+    
+    if (sourcesToFetch.length === 0) {
+      projects.value = [];
+      return;
+    }
+    
+    // Charger les projets pour toutes les sources
+    const allProjects = [];
+    for (const dataSourceId of sourcesToFetch) {
+      try {
+        const response = await api.get(`/admin/data-sources/${dataSourceId}/azure-devops/projects`);
+        const projectsForSource = response.data.filter(p => p.isVisible);
+        allProjects.push(...projectsForSource);
+      } catch (err) {
+        console.error(`Erreur lors du chargement des projets pour la source ${dataSourceId}:`, err);
+      }
+    }
+    projects.value = allProjects;
   } catch (err) {
     console.error('Erreur lors du chargement des projets:', err);
   }
 };
 
 const fetchPipelines = async () => {
-  if (!filters.value.dataSourceId) {
-    pipelines.value = [];
-    return;
-  }
   try {
-    const params = filters.value.projectId ? { projectId: filters.value.projectId } : {};
-    const response = await api.get(`/admin/data-sources/${filters.value.dataSourceId}/azure-devops/pipelines`, { params });
-    pipelines.value = response.data.filter(p => p.isVisible);
+    // Si aucune source n'est sélectionnée, charger les pipelines de toutes les sources
+    const sourcesToFetch = filters.value.dataSourceIds.length > 0 
+      ? filters.value.dataSourceIds 
+      : dataSources.value.map(s => s._id);
+    
+    if (sourcesToFetch.length === 0) {
+      pipelines.value = [];
+      return;
+    }
+    
+    // Charger les pipelines pour toutes les sources et projets sélectionnés
+    const allPipelines = [];
+    for (const dataSourceId of sourcesToFetch) {
+      try {
+        const params = filters.value.projectIds.length > 0 
+          ? { projectId: filters.value.projectIds.join(',') } 
+          : {};
+        const response = await api.get(`/admin/data-sources/${dataSourceId}/azure-devops/pipelines`, { params });
+        const pipelinesForSource = response.data.filter(p => p.isVisible);
+        allPipelines.push(...pipelinesForSource);
+      } catch (err) {
+        console.error(`Erreur lors du chargement des pipelines pour la source ${dataSourceId}:`, err);
+      }
+    }
+    pipelines.value = allPipelines;
   } catch (err) {
     console.error('Erreur lors du chargement des pipelines:', err);
   }
 };
 
-const fetchKeywordGroups = async () => {
-  try {
-    const params = filters.value.dataSourceId ? { dataSourceId: filters.value.dataSourceId } : {};
-    const response = await api.get('/pipeline-logs/keywords', { params });
-    keywordGroups.value = response.data;
-    
-    // Si aucun groupe n'existe, créer des groupes par défaut
-    if (keywordGroups.value.length === 0) {
-      keywordGroups.value = [
-        {
-          keyword: 'Preprod',
-          items: []
-        },
-        {
-          keyword: 'Staging',
-          items: []
-        },
-        {
-          keyword: 'Production',
-          items: []
-        }
-      ];
-    }
-  } catch (err) {
-    console.error('Erreur lors du chargement des groupes de mots-clés:', err);
-    // Créer des groupes par défaut en cas d'erreur
-    keywordGroups.value = [
-      {
-        keyword: 'Preprod',
-        items: []
-      },
-      {
-        keyword: 'Staging',
-        items: []
-      },
-      {
-        keyword: 'Production',
-        items: []
-      }
-    ];
-  }
-};
 
 const fetchLogs = async () => {
+  // Éviter les appels multiples simultanés
+  if (loading.value) return;
+  
+  // Ne pas charger si le composant n'est pas encore monté
+  if (!isMounted.value) return;
+  
+  // Ne pas charger si aucune source de données n'est disponible
+  if (dataSources.value.length === 0) {
+    logs.value = [];
+    return;
+  }
+  
   loading.value = true;
   error.value = '';
   
   try {
     const params = {
-      ...filters.value,
-      keywords: filters.value.keywords.join(','),
+      startDate: filters.value.startDate,
+      endDate: filters.value.endDate,
       page: pagination.value.page,
       limit: pagination.value.limit
     };
+    
+    // Ajouter les sources sélectionnées (multi-sélection)
+    // Si aucune source n'est sélectionnée, on charge tout (pas de filtre)
+    if (filters.value.dataSourceIds.length > 0) {
+      params.dataSourceId = filters.value.dataSourceIds.join(',');
+    }
+    
+    // Ajouter les projets sélectionnés (multi-sélection)
+    if (filters.value.projectIds.length > 0) {
+      params.projectId = filters.value.projectIds.join(',');
+    }
+    
+    // Ajouter les pipelines sélectionnés (multi-sélection)
+    if (filters.value.pipelineIds.length > 0) {
+      params.pipelineId = filters.value.pipelineIds.join(',');
+    }
     
     // Nettoyer les paramètres vides
     Object.keys(params).forEach(key => {
@@ -417,29 +627,194 @@ const fetchLogs = async () => {
     logs.value = response.data.data || [];
     pagination.value = response.data.pagination || pagination.value;
   } catch (err) {
+    // Ne pas afficher d'erreur si c'est une erreur d'authentification (401)
+    if (err.response?.status === 401) {
+      error.value = 'Authentification requise';
+      logs.value = [];
+      pagination.value = {
+        page: 1,
+        limit: 20,
+        total: 0,
+        pages: 0
+      };
+      return;
+    }
     error.value = err.response?.data?.error || 'Erreur lors du chargement des logs';
     console.error('Erreur lors du chargement des logs:', err);
+    // En cas d'erreur, vider les logs pour éviter les affichages incorrects
+    logs.value = [];
+    pagination.value = {
+      page: 1,
+      limit: 20,
+      total: 0,
+      pages: 0
+    };
   } finally {
     loading.value = false;
   }
 };
 
 const handleFilterChange = async () => {
+  // Éviter les appels multiples simultanés
+  if (isUpdatingFilters.value) return;
+  
+  isUpdatingFilters.value = true;
   pagination.value.page = 1;
   await fetchLogs();
-  await fetchPipelines();
+  await nextTick();
+  isUpdatingFilters.value = false;
+};
+
+// Fonctions pour sélectionner et désélectionner les filtres (multi-sélection)
+const toggleDataSource = (source) => {
+  const index = filters.value.dataSourceIds.indexOf(source._id);
+  if (index > -1) {
+    // Retirer de la sélection
+    filters.value.dataSourceIds.splice(index, 1);
+    // Réinitialiser les filtres dépendants si plus de sources
+    if (filters.value.dataSourceIds.length === 0) {
+      filters.value.projectIds = [];
+      filters.value.pipelineIds = [];
+      searchProject.value = '';
+      searchPipeline.value = '';
+    } else {
+      // Nettoyer les projets et pipelines qui ne sont plus valides
+      updateDependentFilters();
+    }
+  } else {
+    // Ajouter à la sélection
+    filters.value.dataSourceIds.push(source._id);
+  }
+  searchDataSource.value = '';
+  showDataSourceDropdown.value = false;
+  handleFilterChange();
+};
+
+const removeDataSource = (sourceId) => {
+  const index = filters.value.dataSourceIds.indexOf(sourceId);
+  if (index > -1) {
+    filters.value.dataSourceIds.splice(index, 1);
+    // Réinitialiser les filtres dépendants si plus de sources
+    if (filters.value.dataSourceIds.length === 0) {
+      filters.value.projectIds = [];
+      filters.value.pipelineIds = [];
+      searchProject.value = '';
+      searchPipeline.value = '';
+    } else {
+      updateDependentFilters();
+    }
+    handleFilterChange();
+  }
+};
+
+const toggleProject = (project) => {
+  const index = filters.value.projectIds.indexOf(project.projectId);
+  if (index > -1) {
+    // Retirer de la sélection
+    filters.value.projectIds.splice(index, 1);
+    // Nettoyer les pipelines qui ne sont plus valides
+    updateDependentFilters();
+  } else {
+    // Ajouter à la sélection
+    filters.value.projectIds.push(project.projectId);
+  }
+  searchProject.value = '';
+  showProjectDropdown.value = false;
+  handleFilterChange();
+};
+
+const removeProject = (projectId) => {
+  const index = filters.value.projectIds.indexOf(projectId);
+  if (index > -1) {
+    filters.value.projectIds.splice(index, 1);
+    updateDependentFilters();
+    handleFilterChange();
+  }
+};
+
+const togglePipeline = (pipeline) => {
+  const index = filters.value.pipelineIds.indexOf(pipeline.pipelineId);
+  if (index > -1) {
+    // Retirer de la sélection
+    filters.value.pipelineIds.splice(index, 1);
+  } else {
+    // Ajouter à la sélection
+    filters.value.pipelineIds.push(pipeline.pipelineId);
+  }
+  searchPipeline.value = '';
+  showPipelineDropdown.value = false;
+  handleFilterChange();
+};
+
+const removePipeline = (pipelineId) => {
+  const index = filters.value.pipelineIds.indexOf(pipelineId);
+  if (index > -1) {
+    filters.value.pipelineIds.splice(index, 1);
+    handleFilterChange();
+  }
+};
+
+// Fonction pour mettre à jour les filtres dépendants
+const updateDependentFilters = () => {
+  // Nettoyer les projets qui ne sont plus dans les sources sélectionnées
+  if (filters.value.dataSourceIds.length > 0) {
+    filters.value.projectIds = filters.value.projectIds.filter(projectId => {
+      const project = projects.value.find(p => p.projectId === projectId);
+      return project && filters.value.dataSourceIds.includes(project.dataSourceId);
+    });
+  }
+  
+  // Nettoyer les pipelines qui ne sont plus dans les sources/projets sélectionnés
+  if (filters.value.dataSourceIds.length > 0 || filters.value.projectIds.length > 0) {
+    filters.value.pipelineIds = filters.value.pipelineIds.filter(pipelineId => {
+      const pipeline = pipelines.value.find(p => p.pipelineId === pipelineId);
+      if (!pipeline) return false;
+      if (filters.value.dataSourceIds.length > 0 && !filters.value.dataSourceIds.includes(pipeline.dataSourceId)) {
+        return false;
+      }
+      if (filters.value.projectIds.length > 0 && !filters.value.projectIds.includes(pipeline.projectId)) {
+        return false;
+      }
+      return true;
+    });
+  }
+};
+
+// Fonctions pour obtenir les noms des éléments sélectionnés
+const getDataSourceName = (id) => {
+  const source = dataSources.value.find(s => s._id === id);
+  return source ? source.name : '';
+};
+
+const getProjectName = (projectId) => {
+  const project = projects.value.find(p => p.projectId === projectId);
+  return project ? (project.displayName || project.name) : '';
+};
+
+const getPipelineName = (pipelineId) => {
+  const pipeline = pipelines.value.find(p => p.pipelineId === pipelineId);
+  return pipeline ? (pipeline.displayName || pipeline.name) : '';
 };
 
 const resetFilters = async () => {
+  if (isUpdatingFilters.value) return;
+  
+  isUpdatingFilters.value = true;
   filters.value = {
-    dataSourceId: '',
-    projectId: '',
-    pipelineId: '',
-    keywords: [],
+    dataSourceIds: [],
+    projectIds: [],
+    pipelineIds: [],
     startDate: '',
     endDate: ''
   };
+  searchDataSource.value = '';
+  searchProject.value = '';
+  searchPipeline.value = '';
+  projects.value = [];
+  pipelines.value = [];
+  await nextTick();
   await handleFilterChange();
+  isUpdatingFilters.value = false;
 };
 
 const previousPage = async () => {
@@ -456,28 +831,109 @@ const nextPage = async () => {
   }
 };
 
-watch(() => filters.value.dataSourceId, async () => {
+watch(() => filters.value.dataSourceIds, async (newValue, oldValue) => {
+  // Éviter les appels inutiles si la valeur n'a pas vraiment changé
+  if (JSON.stringify(newValue) === JSON.stringify(oldValue)) return;
+  if (isUpdatingFilters.value) return;
+  if (!isMounted.value) return;
+  
+  isUpdatingFilters.value = true;
+  
+  // Mettre à jour les filtres dépendants
+  updateDependentFilters();
+  
+  // Toujours charger les projets et pipelines (même si aucune source n'est sélectionnée)
   await fetchProjects();
   await fetchPipelines();
-  await fetchKeywordGroups();
+  await nextTick();
   await handleFilterChange();
-});
+  
+  await nextTick();
+  isUpdatingFilters.value = false;
+}, { deep: true, immediate: false });
 
-watch(() => filters.value.projectId, async () => {
-  await fetchPipelines();
+watch(() => filters.value.projectIds, async (newValue, oldValue) => {
+  // Éviter les appels inutiles si la valeur n'a pas vraiment changé
+  if (JSON.stringify(newValue) === JSON.stringify(oldValue)) return;
+  if (isUpdatingFilters.value) return;
+  if (!isMounted.value) return;
+  
+  isUpdatingFilters.value = true;
+  
+  // Mettre à jour les filtres dépendants
+  updateDependentFilters();
+  
+  if (filters.value.dataSourceIds.length > 0) {
+    await fetchPipelines();
+    await nextTick();
+    await handleFilterChange();
+  }
+  
+  await nextTick();
+  isUpdatingFilters.value = false;
+}, { deep: true, immediate: false });
+
+watch(() => filters.value.pipelineIds, async (newValue, oldValue) => {
+  // Éviter les appels inutiles si la valeur n'a pas vraiment changé
+  if (JSON.stringify(newValue) === JSON.stringify(oldValue)) return;
+  if (isUpdatingFilters.value) return;
+  if (!isMounted.value) return;
+  
+  isUpdatingFilters.value = true;
   await handleFilterChange();
-});
+  await nextTick();
+  isUpdatingFilters.value = false;
+}, { deep: true, immediate: false });
+
+watch(() => filters.value.startDate, async (newValue, oldValue) => {
+  if (newValue === oldValue) return;
+  if (isUpdatingFilters.value) return;
+  if (!isMounted.value) return;
+  
+  isUpdatingFilters.value = true;
+  await handleFilterChange();
+  await nextTick();
+  isUpdatingFilters.value = false;
+}, { immediate: false });
+
+watch(() => filters.value.endDate, async (newValue, oldValue) => {
+  if (newValue === oldValue) return;
+  if (isUpdatingFilters.value) return;
+  if (!isMounted.value) return;
+  
+  isUpdatingFilters.value = true;
+  await handleFilterChange();
+  await nextTick();
+  isUpdatingFilters.value = false;
+}, { immediate: false });
+
 
 onMounted(async () => {
+  isMounted.value = true;
   await fetchDataSources();
-  await fetchKeywordGroups();
-  await fetchLogs();
+  
+  // Si une seule source existe, la sélectionner par défaut
+  // Sinon, laisser vide pour afficher toutes les données
+  if (dataSources.value.length === 1) {
+    filters.value.dataSourceIds = [dataSources.value[0]._id];
+  }
+  
+  // Charger les projets et pipelines (tous si aucune source sélectionnée)
+  await fetchProjects();
+  await fetchPipelines();
+  
+  // Charger tous les logs (avec ou sans filtres)
+  if (dataSources.value.length > 0) {
+    await fetchLogs();
+  } else {
+    logs.value = [];
+  }
 });
 </script>
 
 <style scoped>
 .pipeline-logs-view {
-  padding: 2rem;
+  padding: 0;
 }
 
 .filters-compact {
@@ -501,10 +957,6 @@ onMounted(async () => {
   border-top: 2px solid var(--border-color);
 }
 
-.filters-content-compact.collapsed {
-  display: none;
-}
-
 .filters-row {
   display: flex;
   gap: 1rem;
@@ -512,79 +964,6 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 
-.keywords-group {
-  width: 100%;
-}
-
-.keywords-tree {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1rem;
-  background: var(--background);
-  border-radius: var(--radius-sm);
-  border: 2px solid var(--border-color);
-}
-
-.keyword-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.keyword-parent {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  cursor: pointer;
-  padding: 0.5rem;
-  border-radius: var(--radius-sm);
-  transition: background 0.2s ease;
-}
-
-.keyword-parent:hover {
-  background: var(--surface-hover);
-}
-
-.keyword-label {
-  flex: 1;
-}
-
-.keyword-count {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  font-weight: 400;
-}
-
-.keyword-children {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-left: 2rem;
-  padding: 0.5rem;
-  background: var(--surface);
-  border-radius: var(--radius-sm);
-}
-
-.keyword-child {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.375rem 0.75rem;
-  background: var(--background);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: 0.875rem;
-  transition: all 0.2s ease;
-}
-
-.keyword-child:hover {
-  border-color: var(--primary-color);
-  background: var(--surface-hover);
-}
 
 .logs-list {
   display: flex;
@@ -717,6 +1096,15 @@ onMounted(async () => {
   min-width: 150px;
 }
 
+.form-group-button {
+  justify-content: flex-end;
+}
+
+.form-group-button .btn {
+  align-self: flex-start;
+  margin-top: 1.625rem; /* Aligne avec les inputs : label (0.75rem) + gap (0.5rem) + hauteur label (~0.375rem) */
+}
+
 .form-label-compact {
   font-size: 0.75rem;
   font-weight: 600;
@@ -751,19 +1139,175 @@ onMounted(async () => {
   padding-right: 2.5rem;
 }
 
-.collapse-btn {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 0.875rem;
-  padding: 0.25rem 0.5rem;
-  transition: color 0.2s ease;
+/* Styles pour les champs de recherche */
+.search-input-wrapper {
+  position: relative;
+  width: 100%;
 }
 
-.collapse-btn:hover {
+.search-input-container {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  padding-right: 2.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background-color: var(--background);
+  transition: all 0.2s ease;
+  min-height: 2.5rem;
+}
+
+.search-input-container:focus-within {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.1);
+}
+
+.search-input-container.has-badges {
+  padding: 0.375rem 0.75rem;
+  padding-right: 2.5rem;
+}
+
+.selected-badges-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.search-input-compact {
+  flex: 1;
+  min-width: 150px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  padding: 0;
+  margin: 0;
+}
+
+.search-input-compact:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.search-loading {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.875rem;
+  pointer-events: none;
+}
+
+.search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 0.25rem;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.search-dropdown-item {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  font-size: 0.8125rem;
+}
+
+.search-dropdown-item:hover {
+  background: var(--surface-hover);
+}
+
+.search-dropdown-item.selected {
+  background: var(--primary-color);
+  color: white;
+}
+
+.search-dropdown-item.no-results {
+  color: var(--text-secondary);
+  cursor: default;
+  font-style: italic;
+}
+
+.clear-selected-btn {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.25rem;
+  transition: color 0.2s ease;
+  z-index: 10;
+}
+
+.clear-selected-btn:hover {
   color: var(--text-primary);
 }
+
+/* Styles pour les badges de sélection multiple */
+.selected-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--primary-color);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.badge-remove {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.125rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 0.2s ease;
+}
+
+.badge-remove:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+
+.checkbox-indicator {
+  display: inline-block;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-right: 0.5rem;
+  text-align: center;
+  line-height: 1.25rem;
+  font-weight: bold;
+  color: var(--primary-color);
+}
+
 
 .filters-icon {
   font-size: 1rem;
@@ -772,5 +1316,37 @@ onMounted(async () => {
 .filters-label {
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem 2rem;
+  color: var(--text-secondary);
+}
+
+.empty-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.empty-state h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.75rem;
+}
+
+.empty-state p {
+  font-size: 1rem;
+  line-height: 1.6;
+  margin-bottom: 0.5rem;
+}
+
+.empty-hint {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 1rem;
 }
 </style>

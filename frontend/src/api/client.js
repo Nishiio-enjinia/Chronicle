@@ -21,8 +21,12 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.reload();
+      // Ne pas recharger automatiquement la page, laisser les composants gérer l'affichage
+      // Le token sera supprimé mais on laisse l'utilisateur voir le message d'erreur
+      const token = localStorage.getItem('token');
+      if (token) {
+        localStorage.removeItem('token');
+      }
     }
     return Promise.reject(error);
   }

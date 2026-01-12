@@ -96,38 +96,33 @@
         <div class="event-header">
           <div class="event-title-section">
             <div class="event-icon" :class="getEventIconClass(event.type)">{{ getEventIcon(event.type) }}</div>
-            <div>
-              <h3>{{ event.title }}</h3>
-              <p class="event-meta">
-                <span class="badge" :class="getTypeBadgeClass(event.type)">
-                  {{ getTypeLabel(event.type) }}
-                </span>
-                <span class="badge" :class="getStatusBadgeClass(event.status)">
-                  {{ getStatusLabel(event.status) }}
-                </span>
-                <span class="badge" :class="getImpactBadgeClass(event.impact)">
-                  ⚡ Impact: {{ getImpactLabel(event.impact) }}
-                </span>
-                <span class="site-badge">{{ event.site }}</span>
-                <span v-if="event.application" class="app-badge">{{ event.application }}</span>
-              </p>
-            </div>
+            <h3>{{ event.title }}</h3>
+            <span class="badge" :class="getTypeBadgeClass(event.type)">
+              {{ getTypeLabel(event.type) }}
+            </span>
+            <span class="badge" :class="getStatusBadgeClass(event.status)">
+              {{ getStatusLabel(event.status) }}
+            </span>
+            <span class="badge" :class="getImpactBadgeClass(event.impact)">
+              ⚡ Impact: {{ getImpactLabel(event.impact) }}
+            </span>
+            <span class="site-badge">{{ event.site }}</span>
+            <span v-if="event.application" class="app-badge">{{ event.application }}</span>
+          </div>
+          <div class="event-dates">
+            <span class="date-item">
+              <span class="date-label">📅</span>
+              <span class="date-value">{{ formatDate(event.startDate) }}</span>
+            </span>
+            <span v-if="event.endDate" class="date-item">
+              <span class="date-label">🏁</span>
+              <span class="date-value">{{ formatDate(event.endDate) }}</span>
+            </span>
           </div>
         </div>
 
         <div class="event-description">
           <p>{{ event.description }}</p>
-        </div>
-
-        <div class="event-dates">
-          <div class="date-item">
-            <span class="date-label">📅 Début</span>
-            <span class="date-value">{{ formatDate(event.startDate) }}</span>
-          </div>
-          <div v-if="event.endDate" class="date-item">
-            <span class="date-label">🏁 Fin</span>
-            <span class="date-value">{{ formatDate(event.endDate) }}</span>
-          </div>
         </div>
       </div>
 
@@ -432,20 +427,28 @@ const getEventIconClass = (type) => {
   margin-bottom: 1.5rem;
   padding-bottom: 1.5rem;
   border-bottom: 2px solid var(--border-light);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .event-title-section {
   display: flex;
-  gap: 1rem;
-  align-items: flex-start;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .event-icon {
-  font-size: 2rem;
+  font-size: 1.5rem;
   line-height: 1;
   flex-shrink: 0;
-  width: 3rem;
-  height: 3rem;
+  width: 2.5rem;
+  height: 2.5rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -454,19 +457,12 @@ const getEventIconClass = (type) => {
 }
 
 .event-header h3 {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 700;
-  margin-bottom: 0.75rem;
+  margin: 0;
   color: var(--text-primary);
-}
-
-.event-meta {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  align-items: center;
-  color: var(--text-secondary);
-  font-size: 0.875rem;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .site-badge,
@@ -491,32 +487,28 @@ const getEventIconClass = (type) => {
 
 .event-dates {
   display: flex;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-  padding: 1rem;
-  background: linear-gradient(135deg, var(--background) 0%, #1e293b 100%);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-color);
+  gap: 1rem;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .date-item {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
 }
 
 .date-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .date-value {
-  font-size: 0.875rem;
   font-weight: 600;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .pagination {

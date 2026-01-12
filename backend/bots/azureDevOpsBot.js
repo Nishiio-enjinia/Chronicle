@@ -239,15 +239,45 @@ const crawl = async (source) => {
       workItems: []
     };
     
-    // Récupérer tous les projets
+    // Récupérer uniquement les projets visibles depuis la base de données
+    const visibleProjects = await AzureDevOpsProject.find({ 
+      dataSourceId, 
+      isVisible: true 
+    }).lean();
+    
+    if (visibleProjects.length === 0) {
+      console.log(`ℹ️  Aucun projet visible pour la source ${source.name}`);
+      return updates;
+    }
+    
+    // Récupérer tous les projets depuis Azure DevOps
     const coreApi = await webApi.getCoreApi();
-    let projects = await coreApi.getProjects();
+    let allProjects = await coreApi.getProjects();
     
     // Filtrer par projets sélectionnés si spécifiés
     const selectedProjects = source.config.selectedProjects;
     if (selectedProjects && selectedProjects.length > 0) {
-      projects = projects.filter(p => selectedProjects.includes(p.name));
+      allProjects = allProjects.filter(p => selectedProjects.includes(p.name));
     }
+    
+    // Ne garder que les projets visibles
+    const visibleProjectIds = new Set(visibleProjects.map(p => p.projectId));
+    const projects = allProjects.filter(p => visibleProjectIds.has(p.id));
+    
+    if (projects.length === 0) {
+      console.log(`ℹ️  Aucun projet visible trouvé pour la source ${source.name}`);
+      return updates;
+    }
+    
+    // Récupérer uniquement les pipelines visibles
+    const visiblePipelines = await AzureDevOpsPipeline.find({ 
+      dataSourceId, 
+      isVisible: true 
+    }).lean();
+    
+    const visiblePipelineIds = new Set(visiblePipelines.map(p => p.pipelineId));
+    
+    console.log(`📊 Crawl de ${projects.length} projet(s) visible(s) avec ${visiblePipelineIds.size} pipeline(s) visible(s)`);
     
     // Fonction helper pour extraire les mots-clés d'un nom
     const extractKeywords = (name) => {
@@ -279,11 +309,21 @@ const crawl = async (source) => {
       if (crawlPipelines && (crawlLogs !== false)) {
         try {
           const buildApi = await webApi.getBuildApi();
-          // Récupérer les 50 derniers builds de tous les pipelines
+          
+          // Récupérer uniquement les IDs des pipelines visibles pour ce projet
+          const projectVisiblePipelines = visiblePipelines.filter(p => p.projectId === project.id);
+          const pipelineDefinitionIds = projectVisiblePipelines.map(p => parseInt(p.pipelineId));
+          
+          if (pipelineDefinitionIds.length === 0) {
+            console.log(`ℹ️  Aucun pipeline visible pour le projet ${project.name}`);
+            continue;
+          }
+          
+          // Récupérer les builds uniquement pour les pipelines visibles
           // getBuilds(project, definitions, queues, buildNumber, minTime, maxTime, requestedFor, reasonFilter, statusFilter, resultFilter, tagFilters, properties, top, continuationToken, maxBuildsPerDefinition, deletedFilter, queryOrder, branchName, buildIds, repositoryId, repositoryType)
           const builds = await buildApi.getBuilds(
             project.id,  // project
-            undefined,   // definitions (tous)
+            pipelineDefinitionIds,   // definitions (uniquement les pipelines visibles)
             undefined,   // queues
             undefined,   // buildNumber
             undefined,   // minTime
@@ -330,6 +370,13 @@ const crawl = async (source) => {
               console.warn(`⚠️  Build invalide ignoré`);
               continue;
             }
+            
+            // Vérifier que le pipeline du build est visible
+            const buildPipelineId = build.definition?.id?.toString();
+            if (!buildPipelineId || !visiblePipelineIds.has(buildPipelineId)) {
+              continue; // Ignorer les builds des pipelines non visibles
+            }
+            
             const buildName = build.definition?.name || build.buildNumber || '';
             const keywords = extractKeywords(buildName);
             
@@ -423,6 +470,48 @@ const crawl = async (source) => {
               }
             }
             
+            // Déterminer le statut du build
+            // Azure DevOps BuildResult enum:
+            // None = 0 (pas encore terminé)
+            // Succeeded = 1
+            // PartiallySucceeded = 2
+            // Failed = 3
+            // Canceled = 4
+            // Azure DevOps BuildStatus enum:
+            // None = 0
+            // InProgress = 1
+            // Completed = 2
+            // Cancelling = 4
+            // Postponed = 8
+            let buildStatus = 'inProgress';
+            
+            // Debug: afficher les valeurs reçues pour les premiers builds
+            if (buildsArray.indexOf(build) < 5) {
+              console.log(`🔍 Build ${build.id} (${build.buildNumber}): status=${build.status} (type: ${typeof build.status}), result=${build.result} (type: ${typeof build.result})`);
+            }
+            
+            if (build.status === 2 || build.status === 'completed') {
+              // Build terminé, utiliser result
+              if (build.result === 1) {
+                buildStatus = 'succeeded';
+              } else if (build.result === 2) {
+                buildStatus = 'partiallySucceeded';
+              } else if (build.result === 3) {
+                buildStatus = 'failed';
+              } else if (build.result === 4) {
+                buildStatus = 'canceled';
+              } else if (build.result === 0 || build.result === undefined || build.result === null) {
+                // Si result est None/undefined mais que le build est terminé, considérer comme failed par défaut
+                buildStatus = 'failed';
+              }
+            } else if (build.status === 1 || build.status === 'inProgress') {
+              buildStatus = 'inProgress';
+            } else if (build.status === 4 || build.status === 'cancelling') {
+              buildStatus = 'canceled';
+            } else if (build.status === 8 || build.status === 'postponed') {
+              buildStatus = 'canceled';
+            }
+            
             // Créer ou mettre à jour le log de pipeline
             const pipelineLogData = {
               dataSourceId,
@@ -433,7 +522,7 @@ const crawl = async (source) => {
               buildId: build.id?.toString(),
               buildNumber: build.buildNumber || '',
               type: 'pipeline',
-              status: build.result === 0 ? 'succeeded' : build.result === 1 ? 'partiallySucceeded' : build.result === 2 ? 'failed' : 'canceled',
+              status: buildStatus,
               date: build.startTime || new Date(),
               finishDate: build.finishTime || null,
               requestedBy: build.requestedBy ? {

@@ -73,23 +73,58 @@ Les services seront disponibles sur :
 
 ### Installation pour le développement
 
-#### Backend
+#### Prérequis
 
+- Node.js 20+ installé
+- Docker (uniquement pour MongoDB)
+
+#### Étapes
+
+1. **Lancer MongoDB avec Docker**
 ```bash
+docker-compose -f docker-compose.dev-db.yml up -d
+```
+
+2. **Installer les dépendances**
+```bash
+# À la racine
+npm install
+
+# Backend
 cd backend
 npm install
-cp .env.template .env
-# Éditez .env avec vos configurations
-npm run dev
-```
+cd ..
 
-#### Frontend
-
-```bash
+# Frontend
 cd frontend
 npm install
+cd ..
+```
+
+3. **Configurer l'environnement**
+```bash
+cp backend/env.template backend/.env
+# Le fichier .env est déjà configuré pour localhost
+```
+
+4. **Lancer le développement**
+```bash
+# À la racine - lance frontend et backend ensemble
 npm run dev
 ```
+
+Les services seront disponibles sur :
+- **Frontend** : http://localhost:5173
+- **Backend API** : http://localhost:3000
+- **MongoDB** : localhost:27017
+
+**Commandes disponibles :**
+- `npm run dev` - Lance frontend et backend ensemble
+- `npm run dev:backend` - Lance uniquement le backend
+- `npm run dev:frontend` - Lance uniquement le frontend
+- `npm run start:db` - Lance MongoDB
+- `npm run start:db:detached` - Lance MongoDB en arrière-plan
+- `npm run stop:db` - Arrête MongoDB
 
 ## 🚀 Utilisation
 

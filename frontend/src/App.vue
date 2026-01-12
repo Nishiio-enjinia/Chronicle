@@ -1,6 +1,6 @@
 <template>
   <div id="app">
-    <aside class="sidebar">
+    <aside class="sidebar" :class="{ 'blurred': showAdminModal && isAuthenticated }">
       <div class="sidebar-content">
         <div class="logo-section">
           <div class="logo-icon">📋</div>
@@ -14,10 +14,6 @@
           <router-link to="/events" class="nav-link">
             <span class="nav-icon">📅</span>
             <span class="nav-text">Événements</span>
-          </router-link>
-          <router-link to="/pipeline-logs" class="nav-link">
-            <span class="nav-icon">🔧</span>
-            <span class="nav-text">Logs Pipelines</span>
           </router-link>
           <router-link to="/admin" class="nav-link">
             <span class="nav-icon">⚙️</span>
@@ -42,19 +38,21 @@
           <p>&copy; 2025 Chronicle</p>
         </div>
       </div>
+      <!-- Overlay pour bloquer les interactions avec la sidebar -->
+      <div v-if="showAdminModal && isAuthenticated" class="sidebar-overlay" @click.stop></div>
     </aside>
     
-    <!-- Admin Modal -->
-    <div v-if="showAdminModal && isAuthenticated" class="admin-modal" @click.self="showAdminModal = false">
-      <div class="admin-modal-content">
-        <div class="admin-header">
+    <!-- Admin Panel Fullscreen -->
+    <div v-if="showAdminModal && isAuthenticated" class="admin-fullscreen">
+      <div class="admin-fullscreen-container">
+        <div class="admin-header" :class="{ 'blurred': showDataManagementPanel }">
           <h2>⚙️ Administration</h2>
           <div class="admin-header-actions">
             <span class="admin-user-info">{{ currentUser?.username }}</span>
-            <button class="close-btn" @click="showAdminModal = false">×</button>
+            <button class="close-btn" @click="showAdminModal = false" title="Fermer">×</button>
           </div>
         </div>
-        <div class="admin-tabs">
+        <div class="admin-tabs" :class="{ 'blurred': showDataManagementPanel }">
           <button 
             class="admin-tab" 
             :class="{ active: activeTab === 'data-sources' }"
@@ -83,26 +81,65 @@
           >
             🌐 Pages publiques
           </button>
+          <button 
+            class="admin-tab" 
+            :class="{ active: activeTab === 'filters' }"
+            @click="activeTab = 'filters'"
+          >
+            🔍 Filtres
+          </button>
         </div>
         <div class="admin-content">
+          <!-- Overlay modal pour le panneau de gestion des données -->
+          <div v-if="showDataManagementPanel && selectedDataSource" class="data-management-overlay" @click.self="closeDataManagementPanel"></div>
+          
+          <!-- Panneau plein écran pour gérer les données Azure DevOps -->
+          <div v-if="showDataManagementPanel && selectedDataSource" class="admin-section admin-fullscreen-panel">
+            <div class="fullscreen-panel-header">
+              <div class="modal-icon">
+                <svg width="32" height="32" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="48" height="48" rx="4" fill="#0078D4"/>
+                  <path d="M24 12L12 18V30L24 36L36 30V18L24 12Z" fill="white"/>
+                  <path d="M24 16L16 20V28L24 32L32 28V20L24 16Z" fill="#0078D4"/>
+                </svg>
+              </div>
+              <div class="panel-header-content">
+                <h3>Gérer les données Azure DevOps</h3>
+                <span class="panel-subtitle">{{ selectedDataSource.name }}</span>
+              </div>
+              <button class="btn btn-secondary btn-sm" @click="closeDataManagementPanel" title="Retour">
+                ← Retour
+              </button>
+            </div>
+            <AzureDevOpsDataModal 
+              :sourceId="selectedDataSource._id"
+              :sourceName="selectedDataSource.name || 'Source de données'"
+              :fullscreen="true"
+              @close="closeDataManagementPanel"
+            />
+          </div>
           <!-- Sources de données -->
-          <div v-if="activeTab === 'data-sources'" class="admin-section">
-            <AdminDataSources />
+          <div v-else-if="activeTab === 'data-sources'" class="admin-section">
+            <AdminDataSources @open-data-management="openDataManagementPanel" />
           </div>
           <!-- Utilisateurs -->
-          <div v-if="activeTab === 'users'" class="admin-section">
+          <div v-else-if="activeTab === 'users'" class="admin-section">
             <AdminUsers />
           </div>
           <!-- Permissions -->
-          <div v-if="activeTab === 'permissions'" class="admin-section">
+          <div v-else-if="activeTab === 'permissions'" class="admin-section">
             <AdminPermissions />
           </div>
           <!-- Pages publiques -->
-          <div v-if="activeTab === 'public-pages'" class="admin-section">
+          <div v-else-if="activeTab === 'public-pages'" class="admin-section">
             <AdminPublicPages />
           </div>
+          <!-- Filtres -->
+          <div v-else-if="activeTab === 'filters'" class="admin-section">
+            <AdminKeywordGroups />
+          </div>
         </div>
-        <div class="admin-footer">
+        <div class="admin-footer" :class="{ 'blurred': showDataManagementPanel }">
           <button class="btn btn-secondary" @click="handleLogout">
             🚪 Déconnexion
           </button>
@@ -148,11 +185,14 @@
       </div>
     </div>
     
-    <main class="main">
+    <main class="main" v-if="!showAdminModal">
       <div class="container">
         <router-view />
       </div>
     </main>
+
+    <!-- Notifications -->
+    <NotificationToast />
   </div>
 </template>
 
@@ -163,6 +203,9 @@ import AdminDataSources from './components/AdminDataSources.vue';
 import AdminUsers from './components/AdminUsers.vue';
 import AdminPermissions from './components/AdminPermissions.vue';
 import AdminPublicPages from './components/AdminPublicPages.vue';
+import AdminKeywordGroups from './components/AdminKeywordGroups.vue';
+import AzureDevOpsDataModal from './components/AzureDevOpsDataModal.vue';
+import NotificationToast from './components/NotificationToast.vue';
 
 const showLogin = ref(false);
 const showAdminModal = ref(false);
@@ -175,6 +218,8 @@ const loginForm = ref({
   username: '',
   password: ''
 });
+const showDataManagementPanel = ref(false);
+const selectedDataSource = ref(null);
 
 const checkAuth = async () => {
   const token = localStorage.getItem('token');
@@ -220,6 +265,20 @@ const handleLogout = () => {
   currentUser.value = null;
 };
 
+const openDataManagementPanel = (source) => {
+  selectedDataSource.value = source;
+  showDataManagementPanel.value = true;
+};
+
+const closeDataManagementPanel = () => {
+  showDataManagementPanel.value = false;
+  selectedDataSource.value = null;
+  // S'assurer qu'on est sur l'onglet Sources de données
+  if (activeTab.value !== 'data-sources') {
+    activeTab.value = 'data-sources';
+  }
+};
+
 onMounted(() => {
   checkAuth();
 });
@@ -238,6 +297,24 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-lg);
+  transition: filter 0.3s ease;
+}
+
+.sidebar.blurred {
+  filter: blur(4px);
+  pointer-events: none;
+}
+
+.sidebar-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 101;
+  pointer-events: auto;
+  cursor: not-allowed;
 }
 
 .sidebar-content {
@@ -449,31 +526,25 @@ onMounted(() => {
   font-size: 0.75rem;
 }
 
-.admin-modal {
+.admin-fullscreen {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-  backdrop-filter: blur(4px);
-  padding: 2rem;
-}
-
-.admin-modal-content {
   background: var(--surface);
-  border-radius: var(--radius-lg);
-  width: 100%;
-  max-width: 1200px;
-  max-height: 90vh;
+  z-index: 2000;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-xl);
-  border: 1px solid var(--border-color);
+  margin-left: 280px;
+  width: calc(100% - 280px);
+}
+
+.admin-fullscreen-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
   overflow: hidden;
 }
 
@@ -484,6 +555,14 @@ onMounted(() => {
   padding: 1.5rem 2rem;
   border-bottom: 2px solid var(--border-color);
   background: linear-gradient(135deg, var(--surface) 0%, #1e293b 100%);
+  flex-shrink: 0;
+  transition: filter 0.3s ease;
+  position: relative;
+}
+
+.admin-header.blurred {
+  filter: blur(4px);
+  pointer-events: none;
 }
 
 .admin-header h2 {
@@ -491,6 +570,21 @@ onMounted(() => {
   font-weight: 700;
   color: var(--text-primary);
   margin: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .admin-header {
+    padding: 0.75rem 1rem;
+  }
+  
+  .admin-header h2 {
+    font-size: 1.125rem;
+  }
+  
+  .admin-user-info {
+    display: none;
+  }
 }
 
 .admin-header-actions {
@@ -512,6 +606,14 @@ onMounted(() => {
   border-bottom: 2px solid var(--border-color);
   background: var(--background);
   overflow-x: auto;
+  flex-shrink: 0;
+  transition: filter 0.3s ease;
+  position: relative;
+}
+
+.admin-tabs.blurred {
+  filter: blur(4px);
+  pointer-events: none;
 }
 
 .admin-tab {
@@ -525,6 +627,18 @@ onMounted(() => {
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .admin-tabs {
+    padding: 0.5rem 1rem;
+    gap: 0.25rem;
+  }
+  
+  .admin-tab {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+  }
 }
 
 .admin-tab:hover {
@@ -543,10 +657,143 @@ onMounted(() => {
   flex: 1;
   overflow-y: auto;
   padding: 2rem;
+  min-height: 0;
+  position: relative;
 }
 
 .admin-section {
   min-height: 400px;
+}
+
+.data-management-overlay {
+  position: fixed;
+  top: 0;
+  left: 280px;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 2100;
+  pointer-events: auto;
+}
+
+@media (max-width: 768px) {
+  .data-management-overlay {
+    left: 70px;
+  }
+}
+
+.admin-fullscreen-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  position: fixed;
+  top: 0;
+  left: 280px;
+  right: 0;
+  bottom: 0;
+  z-index: 2101;
+  background: var(--surface);
+}
+
+@media (max-width: 768px) {
+  .admin-fullscreen-panel {
+    left: 70px;
+  }
+}
+
+.fullscreen-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.5rem 2rem;
+  border-bottom: 2px solid var(--border-color);
+  background: var(--background);
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .fullscreen-panel-header {
+    padding: 0.75rem 1rem;
+    flex-wrap: nowrap;
+  }
+  
+  .fullscreen-panel-header .modal-icon {
+    width: 24px;
+    height: 24px;
+  }
+  
+  .fullscreen-panel-header h3 {
+    font-size: 1rem;
+  }
+  
+  .panel-subtitle {
+    font-size: 0.75rem;
+  }
+  
+  .fullscreen-panel-header .btn {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+  }
+}
+
+.fullscreen-panel-header .modal-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.panel-header-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.fullscreen-panel-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panel-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 768px) {
+  .panel-header-content {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .fullscreen-panel-header h3 {
+    font-size: 0.875rem;
+    margin: 0;
+  }
+  
+  .panel-subtitle {
+    font-size: 0.75rem;
+  }
+}
+
+.admin-fullscreen-panel .azure-devops-data-modal {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .admin-footer {
@@ -555,6 +802,13 @@ onMounted(() => {
   background: var(--background);
   display: flex;
   justify-content: flex-end;
+  transition: filter 0.3s ease;
+  position: relative;
+}
+
+.admin-footer.blurred {
+  filter: blur(4px);
+  pointer-events: none;
 }
 
 .main {
@@ -600,6 +854,11 @@ onMounted(() => {
 
   .main {
     margin-left: 70px;
+  }
+
+  .admin-fullscreen {
+    margin-left: 70px;
+    width: calc(100% - 70px);
   }
 }
 </style>

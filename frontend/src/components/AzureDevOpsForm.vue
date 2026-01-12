@@ -262,6 +262,7 @@
 <script setup>
 import { ref, reactive, computed } from 'vue';
 import api from '../api/client.js';
+import { useNotifications } from '../stores/notifications.js';
 
 const props = defineProps({
   source: {
@@ -275,6 +276,7 @@ const emit = defineEmits(['submit', 'close']);
 const editing = ref(!!props.source);
 const saving = ref(false);
 const error = ref('');
+const { notify } = useNotifications();
 const discoveringProjects = ref(false);
 const availableProjects = ref([]);
 
@@ -364,7 +366,11 @@ const discoverProjects = async () => {
     availableProjects.value = [];
     
     // Afficher une alerte pour informer l'utilisateur
-    alert(`❌ Erreur lors de la découverte des projets:\n\n${errorMessage}\n\nVérifiez:\n- L'URL de l'organisation est correcte\n- Le PAT est valide et a les bonnes permissions\n- La connexion réseau fonctionne`);
+    notify.error(
+      'Erreur lors de la découverte des projets',
+      `${errorMessage}\n\nVérifiez:\n- L'URL de l'organisation est correcte\n- Le PAT est valide et a les bonnes permissions\n- La connexion réseau fonctionne`,
+      10000
+    );
   } finally {
     discoveringProjects.value = false;
   }

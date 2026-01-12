@@ -101,6 +101,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import api from '../api/client.js';
+import { useNotifications } from '../stores/notifications.js';
 
 const users = ref([]);
 const availableGroups = ref([]);
@@ -153,13 +154,19 @@ const editUser = (user) => {
 };
 
 const deleteUser = async (id) => {
-  if (!confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ?')) return;
+  const confirmed = await confirmAction('Êtes-vous sûr de vouloir supprimer cet utilisateur ?', 'Supprimer l\'utilisateur');
+  if (!confirmed) return;
   
+  const taskId = addTask({ label: 'Suppression de l\'utilisateur...' });
   try {
     await api.delete(`/admin/users/${id}`);
+    removeTask(taskId);
     await fetchUsers();
+    notify.success('Utilisateur supprimé', 'L\'utilisateur a été supprimé avec succès.');
   } catch (err) {
+    removeTask(taskId);
     error.value = err.response?.data?.error || 'Erreur lors de la suppression';
+    notify.error('Erreur', error.value);
   }
 };
 

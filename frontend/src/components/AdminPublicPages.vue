@@ -102,6 +102,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import api from '../api/client.js';
+import { useNotifications } from '../stores/notifications.js';
 
 const pages = ref([]);
 const loading = ref(false);
@@ -144,13 +145,19 @@ const editPage = (page) => {
 };
 
 const deletePage = async (id) => {
-  if (!confirm('Êtes-vous sûr de vouloir supprimer cette page ?')) return;
+  const confirmed = await confirmAction('Êtes-vous sûr de vouloir supprimer cette page ?', 'Supprimer la page');
+  if (!confirmed) return;
   
+  const taskId = addTask({ label: 'Suppression de la page...' });
   try {
     await api.delete(`/admin/public-pages/${id}`);
+    removeTask(taskId);
     await fetchPages();
+    notify.success('Page supprimée', 'La page publique a été supprimée avec succès.');
   } catch (err) {
+    removeTask(taskId);
     error.value = err.response?.data?.error || 'Erreur lors de la suppression';
+    notify.error('Erreur', error.value);
   }
 };
 

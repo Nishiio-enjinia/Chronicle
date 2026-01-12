@@ -23,28 +23,60 @@
             <button 
               v-if="source.type === 'azure-devops' && source.initialCrawlCompleted" 
               class="btn btn-primary btn-sm" 
-              @click="openDataModal(source)"
+              @click.stop="openDataModal(source)"
+              title="Gérer les données"
             >
-              📊 Gérer les données
+              📊
+            </button>
+            <div class="dropdown" :class="{ 'dropdown-open': openDropdown === source._id }">
+              <button 
+                class="btn btn-secondary btn-sm dropdown-toggle" 
+                @click="toggleDropdown(source._id)"
+                title="Actions"
+              >
+                ⚙️
+              </button>
+              <div class="dropdown-menu">
+                <button 
+                  v-if="source.type === 'azure-devops'" 
+                  class="dropdown-item"
+                  @click="runInitialCrawl(source._id); closeDropdown()"
+                  :disabled="crawlingInitial === source._id"
+                >
+                  {{ crawlingInitial === source._id ? '⏳ Crawl initial...' : '🔄 Crawl initial' }}
+                </button>
+                <button 
+                  v-if="source.type === 'azure-devops' && source.isActive && source.initialCrawlCompleted" 
+                  class="dropdown-item"
+                  @click="runManualCrawl(source._id); closeDropdown()"
+                  :disabled="crawlingManual === source._id"
+                >
+                  {{ crawlingManual === source._id ? '⏳ Crawl manuel...' : '▶️ Crawl manuel' }}
+                </button>
+                <div v-if="source.type === 'azure-devops'" class="dropdown-divider"></div>
+                <button 
+                  class="dropdown-item dropdown-item-danger"
+                  @click="resetSourceData(source._id); closeDropdown()"
+                  :disabled="resetting === source._id"
+                >
+                  {{ resetting === source._id ? '⏳ Réinitialisation...' : '🗑️ Réinitialiser les données' }}
+                </button>
+              </div>
+            </div>
+            <button 
+              class="btn btn-secondary btn-sm" 
+              @click="editSource(source)"
+              title="Modifier"
+            >
+              ✏️
             </button>
             <button 
-              v-if="source.type === 'azure-devops'" 
-              class="btn btn-info btn-sm" 
-              @click="runInitialCrawl(source._id)"
-              :disabled="crawlingInitial === source._id"
+              class="btn btn-danger btn-sm" 
+              @click="deleteSource(source._id)"
+              title="Supprimer"
             >
-              {{ crawlingInitial === source._id ? '⏳ Crawl...' : '🔄 Crawl initial' }}
+              🗑️
             </button>
-            <button 
-              v-if="source.type === 'azure-devops' && source.isActive && source.initialCrawlCompleted" 
-              class="btn btn-success btn-sm" 
-              @click="runManualCrawl(source._id)"
-              :disabled="crawlingManual === source._id"
-            >
-              {{ crawlingManual === source._id ? '⏳ Crawl...' : '▶️ Crawl manuel' }}
-            </button>
-            <button class="btn btn-secondary btn-sm" @click="editSource(source)">Modifier</button>
-            <button class="btn btn-danger btn-sm" @click="deleteSource(source._id)">Supprimer</button>
           </div>
         </div>
         <p class="source-description">{{ source.description || 'Aucune description' }}</p>
@@ -97,24 +129,18 @@
       />
     </div>
 
-    <!-- Modal Azure DevOps Data -->
-    <div v-if="showDataModal" class="modal-overlay" @click.self="closeDataModal">
-      <AzureDevOpsDataModal 
-        :sourceId="selectedSource?._id"
-        :sourceName="selectedSource?.name"
-        @close="closeDataModal"
-      />
-    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import api from '../api/client.js';
 import DataSourceTypeSelector from './DataSourceTypeSelector.vue';
 import AzureDevOpsForm from './AzureDevOpsForm.vue';
 import CustomDataSourceForm from './CustomDataSourceForm.vue';
-import AzureDevOpsDataModal from './AzureDevOpsDataModal.vue';
+import { useNotifications } from '../stores/notifications.js';
+
+const emit = defineEmits(['open-data-management']);
 
 const sources = ref([]);
 const loading = ref(false);
@@ -122,12 +148,14 @@ const error = ref('');
 const showTypeSelector = ref(false);
 const showAzureDevOpsForm = ref(false);
 const showCustomForm = ref(false);
-const showDataModal = ref(false);
 const editingSource = ref(null);
-const selectedSource = ref(null);
 const crawlingInitial = ref(null);
 const crawlingManual = ref(null);
 const crawlResult = ref(null);
+const openDropdown = ref(null);
+const resetting = ref(null);
+
+const { notify, confirmAction, addTask, updateTask, removeTask } = useNotifications();
 
 const fetchSources = async () => {
   loading.value = true;
@@ -227,13 +255,19 @@ const handleCustomSubmit = async (formData) => {
 };
 
 const deleteSource = async (id) => {
-  if (!confirm('Êtes-vous sûr de vouloir supprimer cette source ?')) return;
+  const confirmed = await confirmAction('Êtes-vous sûr de vouloir supprimer cette source ?', 'Supprimer la source');
+  if (!confirmed) return;
   
+  const taskId = addTask({ label: 'Suppression de la source...' });
   try {
     await api.delete(`/admin/data-sources/${id}`);
     await fetchSources();
+    removeTask(taskId);
+    notify.success('Source supprimée', 'La source de données a été supprimée avec succès.');
   } catch (err) {
+    removeTask(taskId);
     error.value = err.response?.data?.error || 'Erreur lors de la suppression';
+    notify.error('Erreur', error.value);
   }
 };
 
@@ -252,62 +286,137 @@ const closeCustomForm = () => {
 };
 
 const openDataModal = (source) => {
-  selectedSource.value = source;
-  showDataModal.value = true;
-};
-
-const closeDataModal = () => {
-  showDataModal.value = false;
-  selectedSource.value = null;
+  emit('open-data-management', source);
 };
 
 const runInitialCrawl = async (sourceId) => {
-  if (!confirm('Voulez-vous exécuter le crawl initial ? Cela va découvrir tous les projets, pipelines, repositories et utilisateurs, et les sauvegarder pour remplir les filtres. Les crawls automatiques seront ensuite activés.')) {
-    return;
-  }
+  const confirmed = await confirmAction(
+    'Voulez-vous exécuter le crawl initial ? Cela va découvrir tous les projets, pipelines, repositories et utilisateurs, et les sauvegarder pour remplir les filtres. Les crawls automatiques seront ensuite activés.',
+    'Crawl initial'
+  );
+  if (!confirmed) return;
   
   crawlingInitial.value = sourceId;
   crawlResult.value = null;
   error.value = '';
   
+  const taskId = addTask({ label: 'Crawl initial en cours...', progress: 0 });
+  
   try {
+    updateTask(taskId, { progress: 25 });
     const response = await api.post(`/admin/data-sources/${sourceId}/crawl/initial`);
     crawlResult.value = response.data;
     const data = response.data.data || {};
-    alert(`✅ Crawl initial réussi !\n\n- ${data.projects?.length || 0} projets sauvegardés\n- ${data.pipelines?.length || 0} pipelines sauvegardés\n- ${data.repositories?.length || 0} repositories sauvegardés\n- ${data.users?.length || 0} utilisateurs sauvegardés\n\n✅ Les données sont maintenant disponibles pour les filtres.\n✅ Les crawls automatiques sont maintenant activés.`);
+    
+    updateTask(taskId, { progress: 100 });
+    setTimeout(() => removeTask(taskId), 500);
+    
+    notify.success(
+      'Crawl initial réussi',
+      `${data.projects?.length || 0} projets, ${data.pipelines?.length || 0} pipelines, ${data.repositories?.length || 0} repositories et ${data.users?.length || 0} utilisateurs sauvegardés. Les crawls automatiques sont maintenant activés.`,
+      8000
+    );
+    
     // Rafraîchir la liste pour afficher le statut mis à jour
     await fetchSources();
   } catch (err) {
+    removeTask(taskId);
     error.value = err.response?.data?.error || 'Erreur lors du crawl initial';
-    alert(`❌ Erreur: ${error.value}`);
+    notify.error('Erreur lors du crawl initial', error.value);
   } finally {
     crawlingInitial.value = null;
   }
 };
 
 const runManualCrawl = async (sourceId) => {
-  if (!confirm('Voulez-vous exécuter un crawl manuel maintenant ?')) {
-    return;
-  }
+  const confirmed = await confirmAction('Voulez-vous exécuter un crawl manuel maintenant ?', 'Crawl manuel');
+  if (!confirmed) return;
   
   crawlingManual.value = sourceId;
   crawlResult.value = null;
   error.value = '';
   
+  const taskId = addTask({ label: 'Crawl manuel en cours...', progress: 0 });
+  
   try {
+    updateTask(taskId, { progress: 50 });
     const response = await api.post(`/admin/data-sources/${sourceId}/crawl/manual`);
     crawlResult.value = response.data;
-    alert(`✅ Crawl manuel réussi !\n\n- ${response.data.data?.pipelines?.length || 0} pipelines mis à jour\n- ${response.data.data?.repositories?.length || 0} repositories mis à jour`);
+    
+    updateTask(taskId, { progress: 100 });
+    setTimeout(() => removeTask(taskId), 500);
+    
+    notify.success(
+      'Crawl manuel réussi',
+      `${response.data.data?.pipelines?.length || 0} pipelines et ${response.data.data?.repositories?.length || 0} repositories mis à jour.`
+    );
   } catch (err) {
+    removeTask(taskId);
     error.value = err.response?.data?.error || 'Erreur lors du crawl manuel';
-    alert(`❌ Erreur: ${error.value}`);
+    notify.error('Erreur lors du crawl manuel', error.value);
   } finally {
     crawlingManual.value = null;
   }
 };
 
+const toggleDropdown = (sourceId) => {
+  openDropdown.value = openDropdown.value === sourceId ? null : sourceId;
+};
+
+const closeDropdown = () => {
+  openDropdown.value = null;
+};
+
+const resetSourceData = async (sourceId) => {
+  const source = sources.value.find(s => s._id === sourceId);
+  if (!source) return;
+  
+  const confirmed = await confirmAction(
+    `Êtes-vous sûr de vouloir réinitialiser toutes les données importées pour "${source.name}" ?\n\nCette action va supprimer :\n- Tous les logs de pipelines\n- Tous les groupes de mots-clés\n- Tous les projets, pipelines, repositories et utilisateurs\n\nLa configuration de la source sera conservée.\n\nCette action est irréversible.`,
+    'Réinitialiser les données'
+  );
+  if (!confirmed) return;
+  
+  resetting.value = sourceId;
+  error.value = '';
+  
+  const taskId = addTask({ label: `Réinitialisation de "${source.name}"...`, progress: 0 });
+  
+  try {
+    updateTask(taskId, { progress: 50 });
+    await api.post(`/admin/data-sources/${sourceId}/reset`);
+    
+    updateTask(taskId, { progress: 100 });
+    setTimeout(() => removeTask(taskId), 500);
+    
+    notify.success(
+      'Données réinitialisées',
+      `Toutes les données de "${source.name}" ont été réinitialisées avec succès. La source est prête pour un nouveau crawl initial.`,
+      6000
+    );
+    await fetchSources();
+  } catch (err) {
+    removeTask(taskId);
+    error.value = err.response?.data?.error || 'Erreur lors de la réinitialisation';
+    notify.error('Erreur lors de la réinitialisation', error.value);
+  } finally {
+    resetting.value = null;
+  }
+};
+
+const handleClickOutside = (event) => {
+  if (openDropdown.value && !event.target.closest('.dropdown')) {
+    closeDropdown();
+  }
+};
+
 onMounted(() => {
   fetchSources();
+  document.addEventListener('click', handleClickOutside);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside);
 });
 </script>
 
@@ -364,6 +473,75 @@ onMounted(() => {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+  position: relative;
+}
+
+.dropdown {
+  position: relative;
+}
+
+.dropdown-toggle {
+  position: relative;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  min-width: 200px;
+  z-index: 1000;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dropdown-open .dropdown-menu {
+  display: flex;
+}
+
+.dropdown-item {
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dropdown-item:hover:not(:disabled) {
+  background: var(--background);
+  color: var(--primary-light);
+}
+
+.dropdown-item:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.dropdown-item-danger {
+  color: var(--danger-color);
+}
+
+.dropdown-item-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger-color);
+}
+
+
+.dropdown-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 0.5rem 0;
 }
 
 .btn-info {

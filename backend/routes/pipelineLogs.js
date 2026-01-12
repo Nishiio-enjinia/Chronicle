@@ -37,6 +37,7 @@ router.get('/', requireAuth, async (req, res) => {
       projectId,
       pipelineId,
       keywords,
+      pipelineNames,
       startDate,
       endDate,
       page = 1,
@@ -45,22 +46,94 @@ router.get('/', requireAuth, async (req, res) => {
 
     const query = {};
 
+    // Fonction helper pour parser les IDs multiples (chaîne avec virgules ou tableau)
+    const parseMultipleIds = (value) => {
+      if (!value) return [];
+      if (Array.isArray(value)) {
+        return value.filter(id => id && id.trim());
+      }
+      if (typeof value === 'string') {
+        return value.split(',').filter(id => id.trim());
+      }
+      return [];
+    };
+
+    // Gérer la sélection multiple pour dataSourceId (séparé par des virgules)
     if (dataSourceId) {
-      query.dataSourceId = dataSourceId;
+      const dataSourceArray = parseMultipleIds(dataSourceId);
+      if (dataSourceArray.length > 0) {
+        if (dataSourceArray.length === 1) {
+          query.dataSourceId = dataSourceArray[0];
+        } else {
+          query.dataSourceId = { $in: dataSourceArray };
+        }
+      }
     }
 
+    // Gérer la sélection multiple pour projectId (séparé par des virgules)
     if (projectId) {
-      query.projectId = projectId;
+      const projectArray = parseMultipleIds(projectId);
+      if (projectArray.length > 0) {
+        if (projectArray.length === 1) {
+          query.projectId = projectArray[0];
+        } else {
+          query.projectId = { $in: projectArray };
+        }
+      }
     }
 
+    // Gérer la sélection multiple pour pipelineId (séparé par des virgules)
     if (pipelineId) {
-      query.pipelineId = pipelineId;
+      const pipelineArray = parseMultipleIds(pipelineId);
+      console.log('🔍 PipelineId reçu:', pipelineId, 'Type:', typeof pipelineId, 'IsArray:', Array.isArray(pipelineId));
+      console.log('🔍 PipelineArray après parsing:', pipelineArray);
+      if (pipelineArray.length > 0) {
+        if (pipelineArray.length === 1) {
+          query.pipelineId = pipelineArray[0];
+        } else {
+          query.pipelineId = { $in: pipelineArray };
+        }
+        console.log('🔍 Query pipelineId final:', query.pipelineId);
+      }
     }
 
     if (keywords) {
       const keywordArray = keywords.split(',').filter(k => k);
       if (keywordArray.length > 0) {
         query.keywords = { $in: keywordArray };
+      }
+    }
+
+    if (pipelineNames) {
+      const nameArray = pipelineNames.split(',').filter(name => name.trim());
+      if (nameArray.length > 0) {
+        // Filtrer par nom de pipeline en mode "contient"
+        // Pour chaque nom, chercher dans pipelineName OU buildNumber
+        // Si plusieurs noms, le log doit contenir l'un OU l'autre
+        const nameRegexConditions = [];
+        
+        nameArray.forEach(name => {
+          // Échapper les caractères spéciaux regex
+          const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          nameRegexConditions.push(
+            { pipelineName: { $regex: escapedName, $options: 'i' } },
+            { buildNumber: { $regex: escapedName, $options: 'i' } }
+          );
+        });
+        
+        // Si on a déjà des conditions, on doit les combiner avec $and
+        if (Object.keys(query).length > 0 && (query.$or || query.$and)) {
+          if (!query.$and) {
+            query.$and = [];
+          }
+          if (query.$or) {
+            query.$and.push({ $or: query.$or });
+            delete query.$or;
+          }
+          query.$and.push({ $or: nameRegexConditions });
+        } else {
+          query.$or = nameRegexConditions;
+        }
       }
     }
 
